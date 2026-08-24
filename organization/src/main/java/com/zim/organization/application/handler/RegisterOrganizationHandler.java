@@ -51,13 +51,13 @@ public class RegisterOrganizationHandler {
     ) {
         Objects.requireNonNull(command, "Command cannot be null");
 
-        String normalizedLegalName =
-                normalizeLegalName(command.legalName());
 
-        if (organizationRepository.existsByLegalName(normalizedLegalName)) {
+        LegalName legalName =
+                new LegalName(command.legalName());
+
+        if (organizationRepository.existsByLegalName(legalName.normalizedValue())) {
             throw new OrganizationAlreadyExistsException(
-                    normalizedLegalName
-            );
+                    legalName.value()            );
         }
 
         OrganizationId organizationId =
@@ -77,7 +77,7 @@ public class RegisterOrganizationHandler {
                 organizationId,
                 tenantId,
                 new OrganizationName(command.organizationName()),
-                normalizedLegalName,
+                legalName,
                 new CurrencyCode(command.currencyCode()),
                 headquartersId,
                 new StoreCode(command.headquartersCode()),
@@ -86,19 +86,19 @@ public class RegisterOrganizationHandler {
                 createdAt
         );
 
-        Organization savedOrganization =
+
                 organizationRepository.save(organization);
 
         domainEventPublisher.publish(
-                savedOrganization.pullDomainEvents()
+                organization.pullDomainEvents()
         );
         return new RegisterOrganizationResult(
-                savedOrganization.id().value(),
-                savedOrganization.tenantId().value(),
-                savedOrganization.name().value(),
-                savedOrganization.status().name(),
+                organization.id().value(),
+                organization.tenantId().value(),
+                organization.name().value(),
+                organization.status().name(),
                 headquartersId.value(),
-                savedOrganization.createdAt()
+                organization.createdAt()
         );
     }
 

@@ -72,17 +72,17 @@ public final class CloseOrganizationHandler {
 
         organization.close(eventId, closedAt);
 
-        Organization savedOrganization =
+
                 organizationRepository.save(organization);
 
         domainEventPublisher.publish(
-                savedOrganization.pullDomainEvents()
+                organization.pullDomainEvents()
         );
 
         return new CloseOrganizationResult(
-                savedOrganization.id().value(),
-                savedOrganization.tenantId().value(),
-                savedOrganization.status().name(),
+                organization.id().value(),
+                organization.tenantId().value(),
+                organization.status().name(),
                 closedAt
         );
     }

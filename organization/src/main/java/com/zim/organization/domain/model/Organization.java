@@ -7,11 +7,10 @@ import com.zim.shared.domain.AggregateRoot;
 
 import com.zim.organization.domain.rule.HeadquartersCannotBeDeactivatedRule;
 import com.zim.organization.domain.rule.OrganizationMustBeActiveToDeactivateStoreRule;
-import com.zim.organization.domain.rule.OrganizationMustKeepAtLeastOneActiveStoreRule;
 import com.zim.organization.domain.rule.StoreMustBeActiveToBeDeactivatedRule;
+import com.zim.organization.domain.rule.OrganizationMustKeepAtLeastOneActiveStoreRule;
 
-import com.zim.organization.domain.event.OrganizationClosed;
-import com.zim.organization.domain.rule.OrganizationMustBeClosableRule;
+
 
 
 import java.time.Instant;
@@ -21,18 +20,19 @@ public final class Organization  extends AggregateRoot {
 
     private final OrganizationId id;
     private final TenantId tenantId;
-    private OrganizationName name;
-    private final String legalName;
+    private final OrganizationName name;
+    private final LegalName legalName;
     private final CurrencyCode currency;
     private OrganizationStatus status;
     private final List<Store> stores;
     private final Instant createdAt;
 
+
     private Organization(
             OrganizationId id,
             TenantId tenantId,
             OrganizationName name,
-            String legalName,
+            LegalName legalName,
             CurrencyCode currency,
             OrganizationStatus status,
             List<Store> stores,
@@ -47,7 +47,7 @@ public final class Organization  extends AggregateRoot {
                 name,
                 "Organization name cannot be null"
         );
-        this.legalName = validateLegalName(legalName);
+        this.legalName = legalName;
         this.currency = Objects.requireNonNull(
                 currency,
                 "Currency cannot be null"
@@ -72,7 +72,7 @@ public final class Organization  extends AggregateRoot {
             OrganizationId organizationId,
             TenantId tenantId,
             OrganizationName organizationName,
-            String legalName,
+            LegalName legalName,
             CurrencyCode currency,
             StoreId headquartersId,
             StoreCode headquartersCode,
@@ -84,7 +84,8 @@ public final class Organization  extends AggregateRoot {
         Store headquarters = Store.createHeadquarters(
                 headquartersId,
                 headquartersCode,
-                headquartersName
+                headquartersName,
+                createdAt
         );
 
         Organization organization = new Organization(
@@ -203,7 +204,8 @@ public final class Organization  extends AggregateRoot {
                 Store.create(
                         storeId,
                         storeCode,
-                        storeName
+                        storeName,
+                        occurredAt
                 )
         );
 
@@ -291,7 +293,7 @@ public final class Organization  extends AggregateRoot {
             OrganizationId organizationId,
             TenantId tenantId,
             OrganizationName organizationName,
-            String legalName,
+            LegalName legalName,
             CurrencyCode currency,
             OrganizationStatus status,
             List<Store> stores,
@@ -402,19 +404,6 @@ public final class Organization  extends AggregateRoot {
         }
     }
 
-    private static String validateLegalName(String legalName) {
-        Objects.requireNonNull(legalName, "Legal name cannot be null");
-
-        String normalized = legalName.trim();
-
-        if (normalized.length() < 2 || normalized.length() > 160) {
-            throw new IllegalArgumentException(
-                    "Legal name must contain between 2 and 160 characters"
-            );
-        }
-
-        return normalized;
-    }
 
     public OrganizationId id() {
         return id;
@@ -428,10 +417,9 @@ public final class Organization  extends AggregateRoot {
         return name;
     }
 
-    public String legalName() {
+    public LegalName legalName() {
         return legalName;
     }
-
     public CurrencyCode currency() {
         return currency;
     }

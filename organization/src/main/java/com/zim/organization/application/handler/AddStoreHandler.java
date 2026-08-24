@@ -96,14 +96,13 @@ public final class AddStoreHandler {
                 addedAt
         );
 
-        Organization savedOrganization =
                 organizationRepository.save(organization);
 
         domainEventPublisher.publish(
-                savedOrganization.pullDomainEvents()
+                organization.pullDomainEvents()
         );
 
-        Store addedStore = savedOrganization.stores()
+        Store addedStore = organization.stores()
                 .stream()
                 .filter(store -> store.id().equals(storeId))
                 .findFirst()
@@ -114,7 +113,7 @@ public final class AddStoreHandler {
                 );
 
         return new AddStoreResult(
-                savedOrganization.id().value(),
+                organization.id().value(),
                 addedStore.id().value(),
                 addedStore.code().value(),
                 addedStore.name().value(),

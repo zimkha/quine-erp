@@ -74,17 +74,17 @@ public final class ActivateOrganizationHandler {
 
         organization.activate(eventId, activatedAt);
 
-        Organization savedOrganization =
+
                 organizationRepository.save(organization);
 
         domainEventPublisher.publish(
-                savedOrganization.pullDomainEvents()
+                organization.pullDomainEvents()
         );
 
         return new ActivateOrganizationResult(
-                savedOrganization.id().value(),
-                savedOrganization.tenantId().value(),
-                savedOrganization.status().name(),
+                organization.id().value(),
+                organization.tenantId().value(),
+                organization.status().name(),
                 activatedAt
         );
     }

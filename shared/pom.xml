@@ -13,7 +13,7 @@
     <artifactId>shared</artifactId>
     <packaging>jar</packaging>
 
-    <name>Quine ERP - Shared Kernel</name>
+    <name>shared</name>
 
     <dependencies>
         <dependency>

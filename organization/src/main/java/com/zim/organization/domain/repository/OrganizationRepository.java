@@ -9,7 +9,7 @@ import java.util.Optional;
 
 public interface OrganizationRepository {
 
-    Organization save(Organization organization);
+    void save(Organization organization);
 
     Optional<Organization> findById(OrganizationId organizationId);
 

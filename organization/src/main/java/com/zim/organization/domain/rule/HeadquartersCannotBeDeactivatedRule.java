@@ -3,6 +3,7 @@ package com.zim.organization.domain.rule;
 import com.zim.organization.domain.model.Store;
 import com.zim.shared.domain.BusinessRule;
 
+
 import java.util.Objects;
 
 public record HeadquartersCannotBeDeactivatedRule(

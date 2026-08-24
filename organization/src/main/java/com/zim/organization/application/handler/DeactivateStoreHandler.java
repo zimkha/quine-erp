@@ -76,15 +76,15 @@ public final class DeactivateStoreHandler {
                 deactivatedAt
         );
 
-        Organization savedOrganization =
+
                 organizationRepository.save(organization);
 
         domainEventPublisher.publish(
-                savedOrganization.pullDomainEvents()
+                organization.pullDomainEvents()
         );
 
         return new DeactivateStoreResult(
-                savedOrganization.id().value(),
+                organization.id().value(),
                 storeId.value(),
                 false,
                 deactivatedAt

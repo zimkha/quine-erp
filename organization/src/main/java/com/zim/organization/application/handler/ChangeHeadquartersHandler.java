@@ -76,15 +76,15 @@ public final class ChangeHeadquartersHandler {
                 changedAt
         );
 
-        Organization savedOrganization =
+
                 organizationRepository.save(organization);
 
         domainEventPublisher.publish(
-                savedOrganization.pullDomainEvents()
+                organization.pullDomainEvents()
         );
 
         return new ChangeHeadquartersResult(
-                savedOrganization.id().value(),
+                organization.id().value(),
                 newHeadquartersId.value(),
                 changedAt
         );
