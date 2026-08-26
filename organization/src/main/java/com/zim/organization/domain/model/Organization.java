@@ -405,6 +405,7 @@ public final class Organization  extends AggregateRoot {
     }
 
 
+
     public OrganizationId id() {
         return id;
     }

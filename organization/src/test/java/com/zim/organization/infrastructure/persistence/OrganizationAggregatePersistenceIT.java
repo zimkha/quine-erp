@@ -2,11 +2,13 @@ package com.zim.organization.infrastructure.persistence;
 
 
 import com.zim.organization.domain.model.Organization;
+import com.zim.organization.domain.model.OrganizationStatus;
 import com.zim.organization.domain.model.Store;
 import com.zim.organization.domain.valueobject.*;
 import com.zim.organization.infrastructure.persistence.adapteur.OrganizationRepositoryAdapter;
 import com.zim.organization.infrastructure.persistence.mapper.OrganizationPersistenceMapper;
 import com.zim.organization.infrastructure.persistence.repository.SpringDataOrganizationRepository;
+import com.zim.organization.infrastructure.persistence.support.OrganizationIntegrationTestSupport;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         replace = AutoConfigureTestDatabase.Replace.NONE
 )
 @ImportAutoConfiguration(FlywayAutoConfiguration.class)
-public class OrganizationAggregatePersistenceIT {
+public class OrganizationAggregatePersistenceIT extends OrganizationIntegrationTestSupport {
 
     @Container
     static final PostgreSQLContainer POSTGRES =
@@ -401,5 +403,141 @@ public class OrganizationAggregatePersistenceIT {
         assertThat(reloaded.stores())
                 .filteredOn(Store::isHeadquarters)
                 .hasSize(1);
+    }
+    @Test
+    void shouldPersistStoreDeactivation() {
+        // Given
+        Organization organization =
+                activeOrganizationWithSecondaryStore();
+
+        repositoryAdapter.save(organization);
+        flushAndClear();
+
+        Organization persisted =
+                reloadOrganization();
+
+        StoreId secondaryStoreId =
+                new StoreId(SECONDARY_STORE_UUID);
+
+        // When
+        persisted.deactivateStore(
+                secondaryStoreId,
+                UUID.randomUUID(),
+                Instant.parse("2026-08-03T10:00:00Z")
+        );
+
+        persisted.clearDomainEvents();
+
+        repositoryAdapter.save(persisted);
+        flushAndClear();
+
+        // Then
+        Organization reloaded =
+                reloadOrganization();
+
+        Store secondaryStore = reloaded.stores()
+                .stream()
+                .filter(store ->
+                        store.id().equals(secondaryStoreId)
+                )
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(secondaryStore.isActive())
+                .isFalse();
+
+        assertThat(secondaryStore.isHeadquarters())
+                .isFalse();
+
+        assertThat(reloaded.stores())
+                .filteredOn(Store::isHeadquarters)
+                .singleElement()
+                .satisfies(headquarters ->
+                        assertThat(headquarters.isActive())
+                                .isTrue()
+                );
+
+        assertThat(reloaded.domainEvents())
+                .isEmpty();
+    }
+
+    @Test
+    void shouldPersistOrganizationStatusChanges() {
+        // Given
+        Organization organization =
+                activeOrganization();
+
+        repositoryAdapter.save(organization);
+        flushAndClear();
+
+        Organization persisted =
+                reloadOrganization();
+
+        assertThat(persisted.status())
+                .isEqualTo(OrganizationStatus.ACTIVE);
+
+        // When
+        persisted.suspend();
+
+        persisted.clearDomainEvents();
+
+        repositoryAdapter.save(persisted);
+        flushAndClear();
+
+        // Then
+        Organization suspended =
+                reloadOrganization();
+
+        assertThat(suspended.status())
+                .isEqualTo(OrganizationStatus.SUSPENDED);
+
+        assertThat(suspended.domainEvents())
+                .isEmpty();
+    }
+
+    @Test
+    void shouldPersistClosedOrganization() {
+        // Given
+        Organization organization =
+                activeOrganization();
+
+        repositoryAdapter.save(organization);
+        flushAndClear();
+
+        Organization persisted =
+                reloadOrganization();
+
+        Instant closedAt =
+                Instant.parse("2026-08-04T10:00:00Z");
+
+        // When
+        persisted.close(
+                UUID.randomUUID(),
+                closedAt
+        );
+
+        persisted.clearDomainEvents();
+
+        repositoryAdapter.save(persisted);
+        flushAndClear();
+
+        // Then
+        Organization closed =
+                reloadOrganization();
+
+        assertThat(closed.status())
+                .isEqualTo(OrganizationStatus.CLOSED);
+
+        assertThat(closed.id())
+                .isEqualTo(persisted.id());
+
+        assertThat(closed.tenantId())
+                .isEqualTo(persisted.tenantId());
+
+        assertThat(closed.stores())
+                .hasSameSizeAs(persisted.stores());
+
+        assertThat(closed.domainEvents())
+                .isEmpty();
     }
 }

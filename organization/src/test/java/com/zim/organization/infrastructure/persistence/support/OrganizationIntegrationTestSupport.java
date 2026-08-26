@@ -115,6 +115,7 @@ public abstract class OrganizationIntegrationTestSupport
         return organization;
     }
 
+
     protected void flushAndClear() {
         entityManager.flush();
         entityManager.clear();
@@ -129,4 +130,5 @@ public abstract class OrganizationIntegrationTestSupport
                 )
                 .orElseThrow();
     }
+
 }

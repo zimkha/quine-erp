@@ -10,7 +10,6 @@ import com.zim.organization.domain.valueobject.*;
 
 
 import java.time.Instant;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -100,17 +99,5 @@ public class RegisterOrganizationHandler {
                 headquartersId.value(),
                 organization.createdAt()
         );
-    }
-
-    private static String normalizeLegalName(String legalName) {
-        Objects.requireNonNull(
-                legalName,
-                "Legal name cannot be null"
-        );
-
-        return legalName
-                .trim()
-                .replaceAll("\\s+", " ")
-                .toUpperCase(Locale.ROOT);
     }
 }

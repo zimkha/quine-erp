@@ -1,9 +1,11 @@
 package com.zim.organization.infrastructure.persistence.support;
 
+import com.zim.organization.OrganizationJpaTestApplication;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -17,7 +19,12 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @AutoConfigureTestDatabase(
         replace = AutoConfigureTestDatabase.Replace.NONE
 )
-@ImportAutoConfiguration(FlywayAutoConfiguration.class)
+@ImportAutoConfiguration(
+        FlywayAutoConfiguration.class
+)
+@Import(
+        OrganizationJpaTestApplication.class
+)
 public abstract class PostgresIntegrationTest {
 
     @Container
