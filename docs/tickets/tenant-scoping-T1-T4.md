@@ -14,7 +14,7 @@
 | 4 | Exception hierarchy | **`TenantNotResolvedException extends RuntimeException`** (not `DomainException`), in `com.zim.shared.tenant`, with a `CODE` constant. Also scope `ApiExceptionHandler` with `@RestControllerAdvice(basePackageClasses = OrganizationController.class)`, so exception handlers from different modules can't take each other's exceptions. |
 | 5 | Malformed tenant ids | **T1 stays a pure move; don't align now.** `TenantId.from(String)` has no production caller. The future `identity` adapter must turn a malformed claim into `TenantNotResolvedException`. `OrganizationId.from` behaves the same, so the two stay consistent. |
 | 6 | Unused tenant lookups | **Remove `findByTenantId` and `existsByTenantId` in T2.** Neither has a production caller, and both build the unresolved 1:1 assumption (decision 1) into the domain port. |
-| 7 | V3 on existing data | **One migration, one transaction is fine.** No deployed database exists because `bootstrap` isn't runnable. The lead or ops should confirm that no shared or staging database has V1/V2 applied. The backfill IT uses its own fresh database (see T3). |
+| 7 | V3 on existing data | **One migration, one transaction is fine.** No deployed database exists because `bootstrap` isn't runnable. **Confirmed by the product owner (2026-09-27): no shared or staging database exists.** The backfill IT uses its own fresh database (see T3). |
 
 **Rules to add to T6 (conventions for other modules):**
 - Each module scopes its `@RestControllerAdvice` to its own package.
@@ -254,7 +254,7 @@ The domain `Store` does not change, because the tenant belongs to the `Organizat
 
 **Open questions**
 - Product decisions 1–4 don't affect this ticket, which can go ahead safely whatever the answers. The composite FK is valid whether a tenant owns one organization or many (decision 1).
-- ~~Does V3 run against existing non-test data?~~ **Resolved (Architect decision 7):** no deployed database exists, so a single transaction is fine. **Lead or ops to confirm** that no shared or staging database has V1/V2 applied.
+- ~~Does V3 run against existing non-test data?~~ **Resolved (Architect decision 7):** no deployed database exists, so a single transaction is fine. **Confirmed by the product owner (2026-09-27):** no shared or staging database exists.
 
 ---
 
