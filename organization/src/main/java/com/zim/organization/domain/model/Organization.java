@@ -170,6 +170,29 @@ public final class Organization  extends AggregateRoot {
     );
   }
 
+  public void reinstate(UUID eventId, Instant occurredAt) {
+    Objects.requireNonNull(eventId, "Event id cannot be null");
+    Objects.requireNonNull(
+        occurredAt,
+        "Occurred at cannot be null"
+    );
+
+    checkRule(
+        new OrganizationMustBeSuspendedToBeReinstatedRule(status)
+    );
+
+    status = OrganizationStatus.ACTIVE;
+
+    registerEvent(
+        new OrganizationReinstated(
+            eventId,
+            id,
+            tenantId,
+            occurredAt
+        )
+    );
+  }
+
   public void close(
       UUID eventId,
       Instant occurredAt
