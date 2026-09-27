@@ -8,17 +8,15 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface SpringDataOrganizationRepository
-        extends JpaRepository<OrganizationEntity, UUID> {
+    extends JpaRepository<OrganizationEntity, UUID> {
 
-    @EntityGraph(attributePaths = "stores")
-    Optional<OrganizationEntity> findWithStoresById(UUID id);
+  @EntityGraph(attributePaths = "stores")
+  Optional<OrganizationEntity> findWithStoresByIdAndTenantId(
+      UUID id,
+      UUID tenantId
+  );
 
-    @EntityGraph(attributePaths = "stores")
-    Optional<OrganizationEntity> findByTenantId(UUID tenantId);
-
-    boolean existsByTenantId(UUID tenantId);
-
-    boolean existsByNormalizedLegalName(
-            String normalizedLegalName
-    );
+  boolean existsByNormalizedLegalName(
+      String normalizedLegalName
+  );
 }

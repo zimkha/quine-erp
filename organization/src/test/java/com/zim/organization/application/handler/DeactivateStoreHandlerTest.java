@@ -8,9 +8,11 @@ import com.zim.organization.domain.event.StoreDeactivated;
 import com.zim.organization.domain.model.Organization;
 import com.zim.organization.domain.model.Store;
 import com.zim.organization.domain.valueobject.*;
+import com.zim.shared.domain.TenantId;
 import com.zim.organization.testing.InMemoryDomainEventPublisher;
 import com.zim.organization.testing.InMemoryOrganizationRepository;
 import com.zim.shared.domain.BusinessRuleViolationException;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -31,6 +33,9 @@ class DeactivateStoreHandlerTest {
             UUID.fromString(
                     "2d3a7d37-ef2c-4794-b248-b08acf42eb38"
             );
+
+  private static final UUID OTHER_TENANT_UUID =
+      UUID.fromString("9a4c2e71-5b3d-4f8a-b6c1-0d2e4f6a8b13");
 
     private static final UUID HEADQUARTERS_UUID =
             UUID.fromString(
@@ -79,6 +84,7 @@ class DeactivateStoreHandlerTest {
 
         DeactivateStoreResult result = handler.handle(
                 new DeactivateStoreCommand(
+                        new TenantId(TENANT_UUID),
                         ORGANIZATION_UUID,
                         SECONDARY_STORE_UUID
                 )
@@ -96,7 +102,7 @@ class DeactivateStoreHandlerTest {
                 .isEqualTo(DEACTIVATED_AT);
 
         Store savedStore = repository
-                .findById(new OrganizationId(ORGANIZATION_UUID))
+                .findById(new TenantId(TENANT_UUID), new OrganizationId(ORGANIZATION_UUID))
                 .orElseThrow()
                 .stores()
                 .stream()
@@ -119,6 +125,7 @@ class DeactivateStoreHandlerTest {
 
         handler.handle(
                 new DeactivateStoreCommand(
+                        new TenantId(TENANT_UUID),
                         ORGANIZATION_UUID,
                         SECONDARY_STORE_UUID
                 )
@@ -146,24 +153,16 @@ class DeactivateStoreHandlerTest {
                 .isEqualTo(DEACTIVATED_AT);
     }
 
-    @Test
-    void shouldRejectUnknownOrganization() {
-        UUID unknownOrganizationId = UUID.fromString(
-                "ee20db38-4666-40d2-a209-690f280ef499"
-        );
-
-        assertThatThrownBy(() -> handler.handle(
-                new DeactivateStoreCommand(
-                        unknownOrganizationId,
-                        SECONDARY_STORE_UUID
-                )
-        ))
-                .isInstanceOf(
-                        OrganizationNotFoundException.class
-                );
-
-        assertThat(publisher.publishedEvents()).isEmpty();
-    }
+  @Test
+  void shouldRejectUnknownOrganization() {
+    assertOrganizationNotFound(() -> handler.handle(
+        new DeactivateStoreCommand(
+            new TenantId(TENANT_UUID),
+            ORGANIZATION_UUID,
+            SECONDARY_STORE_UUID
+        )
+    ));
+  }
 
     @Test
     void shouldRejectUnknownStore() {
@@ -178,6 +177,7 @@ class DeactivateStoreHandlerTest {
 
         assertThatThrownBy(() -> handler.handle(
                 new DeactivateStoreCommand(
+                        new TenantId(TENANT_UUID),
                         ORGANIZATION_UUID,
                         unknownStoreId
                 )
@@ -207,6 +207,7 @@ class DeactivateStoreHandlerTest {
 
         assertThatThrownBy(() -> handler.handle(
                 new DeactivateStoreCommand(
+                        new TenantId(TENANT_UUID),
                         ORGANIZATION_UUID,
                         HEADQUARTERS_UUID
                 )
@@ -234,6 +235,75 @@ class DeactivateStoreHandlerTest {
 
         assertThat(headquarters.isActive()).isTrue();
     }
+
+  @Test
+  void shouldNotDeactivateStoreOfOrganizationOwnedByAnotherTenant() {
+    // The store id is real: it belongs to the victim's organization.
+    Organization organization = activeOrganizationWithSecondaryStore();
+    repository.add(organization);
+
+    assertOrganizationNotFound(() -> handler.handle(
+        new DeactivateStoreCommand(
+            new TenantId(OTHER_TENANT_UUID),
+            ORGANIZATION_UUID,
+            SECONDARY_STORE_UUID
+        )
+    ));
+
+    assertThat(organization.stores())
+        .hasSize(2)
+        .allSatisfy(store -> assertThat(store.isActive()).isTrue());
+    assertThat(organization.domainEvents()).isEmpty();
+  }
+
+  @Test
+  void shouldReportNotFoundRatherThanRuleViolationForAnotherTenant() {
+    // Deactivating the headquarters breaks a rule for the owner, but
+    // another tenant must not learn anything about the organization.
+    Organization organization = activeOrganizationWithSecondaryStore();
+    repository.add(organization);
+
+    assertOrganizationNotFound(() -> handler.handle(
+        new DeactivateStoreCommand(
+            new TenantId(OTHER_TENANT_UUID),
+            ORGANIZATION_UUID,
+            HEADQUARTERS_UUID
+        )
+    ));
+
+    assertThat(organization.stores())
+        .filteredOn(Store::isHeadquarters)
+        .singleElement()
+        .satisfies(store -> {
+          assertThat(store.id().value()).isEqualTo(HEADQUARTERS_UUID);
+          assertThat(store.isActive()).isTrue();
+        });
+  }
+
+  /**
+   * Another tenant's organization must be reported exactly like a missing
+   * one: same exception, code and message, and no side effect.
+   */
+  private void assertOrganizationNotFound(ThrowingCallable call) {
+    assertThatThrownBy(call)
+        .isInstanceOfSatisfying(
+            OrganizationNotFoundException.class,
+            exception -> {
+              assertThat(exception.code())
+                  .isEqualTo("ORGANIZATION_NOT_FOUND");
+              assertThat(exception.organizationId())
+                  .isEqualTo(ORGANIZATION_UUID);
+              assertThat(exception.getMessage())
+                  .isEqualTo(
+                      new OrganizationNotFoundException(ORGANIZATION_UUID)
+                          .getMessage()
+                  );
+            }
+        );
+
+    assertThat(repository.saveCount()).isZero();
+    assertThat(publisher.publishedEvents()).isEmpty();
+  }
 
     private static Organization activeOrganizationWithSecondaryStore() {
         Organization organization = Organization.register(

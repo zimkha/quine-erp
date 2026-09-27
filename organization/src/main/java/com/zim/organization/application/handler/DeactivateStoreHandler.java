@@ -50,6 +50,7 @@ public class DeactivateStoreHandler {
 
     Organization organization = organizationRepository
         .findById(
+            command.tenantId(),
             new OrganizationId(command.organizationId())
         )
         .orElseThrow(() ->

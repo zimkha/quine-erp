@@ -2,10 +2,13 @@ package com.zim.organization.presentation.rest.exception;
 
 import com.zim.organization.application.exception.OrganizationAlreadyExistsException;
 import com.zim.organization.application.exception.OrganizationNotFoundException;
+import com.zim.organization.presentation.rest.OrganizationController;
 import com.zim.shared.domain.BusinessRuleViolationException;
 import com.zim.shared.domain.DomainException;
+import com.zim.shared.tenant.TenantNotResolvedException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -15,8 +18,14 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import java.time.Instant;
 import java.util.stream.Collectors;
 
-@RestControllerAdvice
+/**
+ * Scoped to this module's controllers so that exception handlers of
+ * different modules cannot take each other's exceptions.
+ */
+@RestControllerAdvice(basePackageClasses = OrganizationController.class)
 public class ApiExceptionHandler {
+
+  static final String WWW_AUTHENTICATE_VALUE = "Bearer realm=\"quine-erp\"";
 
   @ExceptionHandler(MethodArgumentNotValidException.class)
   public ResponseEntity<ApiErrorResponse> handleInvalidRequest(
@@ -30,6 +39,24 @@ public class ApiExceptionHandler {
         .collect(Collectors.joining("; "));
 
     return error(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", message);
+  }
+
+  /**
+   * The tenant of the request could not be established: fail closed with
+   * 401. The body carries only the stable code and a generic message.
+   */
+  @ExceptionHandler(TenantNotResolvedException.class)
+  public ResponseEntity<ApiErrorResponse> handleTenantNotResolved(
+      TenantNotResolvedException exception
+  ) {
+    return ResponseEntity
+        .status(HttpStatus.UNAUTHORIZED)
+        .header(HttpHeaders.WWW_AUTHENTICATE, WWW_AUTHENTICATE_VALUE)
+        .body(new ApiErrorResponse(
+            exception.code(),
+            exception.getMessage(),
+            Instant.now()
+        ));
   }
 
   @ExceptionHandler(OrganizationNotFoundException.class)

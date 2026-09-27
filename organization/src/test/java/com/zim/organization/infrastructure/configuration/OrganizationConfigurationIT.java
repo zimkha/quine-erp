@@ -28,6 +28,7 @@ import com.zim.organization.domain.repository.OrganizationRepository;
 import com.zim.organization.domain.valueobject.OrganizationId;
 import com.zim.organization.domain.valueobject.StoreId;
 import com.zim.shared.domain.DomainEvent;
+import com.zim.shared.domain.TenantId;
 import com.zim.organization.infrastructure.persistence.mapper.OrganizationPersistenceMapper;
 import com.zim.organization.infrastructure.persistence.support.PostgresIntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
@@ -200,25 +201,31 @@ class OrganizationConfigurationIT extends PostgresIntegrationTest {
                 "Magasin principal"
             )
         );
+    TenantId tenantId = new TenantId(registered.tenantId());
     UUID organizationId = registered.organizationId();
     UUID thiesId = registered.headquartersId();
 
     activateOrganizationHandler.handle(
-        new ActivateOrganizationCommand(organizationId)
+        new ActivateOrganizationCommand(tenantId, organizationId)
     );
     UUID dakarId = addStoreHandler.handle(
-        new AddStoreCommand(organizationId, "DAKAR-01", "Magasin Dakar")
+        new AddStoreCommand(
+            tenantId,
+            organizationId,
+            "DAKAR-01",
+            "Magasin Dakar"
+        )
     ).storeId();
 
     changeHeadquartersHandler.handle(
-        new ChangeHeadquartersCommand(organizationId, dakarId)
+        new ChangeHeadquartersCommand(tenantId, organizationId, dakarId)
     );
     changeHeadquartersHandler.handle(
-        new ChangeHeadquartersCommand(organizationId, thiesId)
+        new ChangeHeadquartersCommand(tenantId, organizationId, thiesId)
     );
 
     Organization reloaded = organizationRepository
-        .findById(new OrganizationId(organizationId))
+        .findById(tenantId, new OrganizationId(organizationId))
         .orElseThrow();
 
     assertThat(reloaded.status()).isEqualTo(OrganizationStatus.ACTIVE);

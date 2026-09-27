@@ -8,7 +8,7 @@ import com.zim.organization.domain.valueobject.OrganizationName;
 import com.zim.organization.domain.valueobject.StoreCode;
 import com.zim.organization.domain.valueobject.StoreId;
 import com.zim.organization.domain.valueobject.StoreName;
-import com.zim.organization.domain.valueobject.TenantId;
+import com.zim.shared.domain.TenantId;
 import com.zim.organization.infrastructure.persistence.adapteur.OrganizationRepositoryAdapter;
 import com.zim.organization.infrastructure.persistence.mapper.OrganizationPersistenceMapper;
 import com.zim.organization.infrastructure.persistence.repository.SpringDataOrganizationRepository;
@@ -125,6 +125,7 @@ public abstract class OrganizationIntegrationTestSupport
   protected Organization reloadOrganization() {
     return repositoryAdapter
         .findById(
+            new TenantId(TENANT_UUID),
             new OrganizationId(
                 ORGANIZATION_UUID
             )

@@ -6,6 +6,7 @@ import com.zim.organization.domain.event.OrganizationRegistered;
 import com.zim.organization.domain.event.OrganizationSuspended;
 import com.zim.organization.domain.event.StoreDeactivated;
 import com.zim.organization.domain.valueobject.*;
+import com.zim.shared.domain.TenantId;
 import com.zim.shared.domain.BusinessRuleViolationException;
 import com.zim.shared.domain.DomainEvent;
 import org.junit.jupiter.api.Test;

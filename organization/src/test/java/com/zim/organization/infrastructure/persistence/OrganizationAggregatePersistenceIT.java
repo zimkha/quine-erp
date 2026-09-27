@@ -5,6 +5,7 @@ import com.zim.organization.domain.model.Organization;
 import com.zim.organization.domain.model.OrganizationStatus;
 import com.zim.organization.domain.model.Store;
 import com.zim.organization.domain.valueobject.*;
+import com.zim.shared.domain.TenantId;
 import com.zim.organization.infrastructure.persistence.adapteur.OrganizationRepositoryAdapter;
 import com.zim.organization.infrastructure.persistence.mapper.OrganizationPersistenceMapper;
 import com.zim.organization.infrastructure.persistence.repository.SpringDataOrganizationRepository;
@@ -108,6 +109,7 @@ public class OrganizationAggregatePersistenceIT
 
     Organization reloaded = repositoryAdapter
         .findById(
+            new TenantId(TENANT_UUID),
             new OrganizationId(ORGANIZATION_UUID)
         )
         .orElseThrow();
@@ -188,6 +190,7 @@ public class OrganizationAggregatePersistenceIT
 
     Organization persistedOrganization =
         repositoryAdapter.findById(
+            new TenantId(TENANT_UUID),
             new OrganizationId(ORGANIZATION_UUID)
         ).orElseThrow();
 
@@ -227,6 +230,7 @@ public class OrganizationAggregatePersistenceIT
     // Then
     Organization reloaded =
         repositoryAdapter.findById(
+            new TenantId(TENANT_UUID),
             new OrganizationId(ORGANIZATION_UUID)
         ).orElseThrow();
 
@@ -305,6 +309,7 @@ public class OrganizationAggregatePersistenceIT
 
     Organization persisted =
         repositoryAdapter.findById(
+            new TenantId(TENANT_UUID),
             new OrganizationId(ORGANIZATION_UUID)
         ).orElseThrow();
 
@@ -325,6 +330,7 @@ public class OrganizationAggregatePersistenceIT
     // Then
     Organization reloaded =
         repositoryAdapter.findById(
+            new TenantId(TENANT_UUID),
             new OrganizationId(ORGANIZATION_UUID)
         ).orElseThrow();
 

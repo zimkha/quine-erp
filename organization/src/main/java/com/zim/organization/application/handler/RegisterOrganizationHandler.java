@@ -7,7 +7,7 @@ import com.zim.organization.application.result.RegisterOrganizationResult;
 import com.zim.organization.domain.model.Organization;
 import com.zim.organization.domain.repository.OrganizationRepository;
 import com.zim.organization.domain.valueobject.*;
-
+import com.zim.shared.domain.TenantId;
 
 import java.time.Instant;
 import java.util.Objects;
@@ -29,7 +29,8 @@ public class RegisterOrganizationHandler {
       TenantIdGenerator tenantIdGenerator,
       StoreIdGenerator storeIdGenerator,
       EventIdGenerator eventIdGenerator,
-      ClockProvider clockProvider, DomainEventPublisher domainEventPublisher
+      ClockProvider clockProvider,
+      DomainEventPublisher domainEventPublisher
   ) {
     this.organizationRepository =
         Objects.requireNonNull(organizationRepository);
@@ -43,20 +44,22 @@ public class RegisterOrganizationHandler {
         Objects.requireNonNull(eventIdGenerator);
     this.clockProvider =
         Objects.requireNonNull(clockProvider);
-    this.domainEventPublisher = domainEventPublisher;
+    this.domainEventPublisher =
+        Objects.requireNonNull(domainEventPublisher);
   }
+
   public RegisterOrganizationResult handle(
       RegisterOrganizationCommand command
   ) {
     Objects.requireNonNull(command, "Command cannot be null");
-
 
     LegalName legalName =
         new LegalName(command.legalName());
 
     if (organizationRepository.existsByLegalName(legalName.normalizedValue())) {
       throw new OrganizationAlreadyExistsException(
-          legalName.value()            );
+          legalName.value()
+      );
     }
 
     OrganizationId organizationId =
@@ -85,8 +88,7 @@ public class RegisterOrganizationHandler {
         createdAt
     );
 
-
-        organizationRepository.save(organization);
+    organizationRepository.save(organization);
 
     domainEventPublisher.publish(
         organization.pullDomainEvents()
