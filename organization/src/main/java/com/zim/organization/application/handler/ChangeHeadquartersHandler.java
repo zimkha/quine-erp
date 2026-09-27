@@ -15,78 +15,78 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
-public final class ChangeHeadquartersHandler {
+public class ChangeHeadquartersHandler {
 
-    private final OrganizationRepository organizationRepository;
-    private final EventIdGenerator eventIdGenerator;
-    private final ClockProvider clockProvider;
-    private final DomainEventPublisher domainEventPublisher;
+  private final OrganizationRepository organizationRepository;
+  private final EventIdGenerator eventIdGenerator;
+  private final ClockProvider clockProvider;
+  private final DomainEventPublisher domainEventPublisher;
 
-    public ChangeHeadquartersHandler(
-            OrganizationRepository organizationRepository,
-            EventIdGenerator eventIdGenerator,
-            ClockProvider clockProvider,
-            DomainEventPublisher domainEventPublisher
-    ) {
-        this.organizationRepository = Objects.requireNonNull(
-                organizationRepository
-        );
-        this.eventIdGenerator = Objects.requireNonNull(
-                eventIdGenerator
-        );
-        this.clockProvider = Objects.requireNonNull(
-                clockProvider
-        );
-        this.domainEventPublisher = Objects.requireNonNull(
-                domainEventPublisher
-        );
-    }
+  public ChangeHeadquartersHandler(
+      OrganizationRepository organizationRepository,
+      EventIdGenerator eventIdGenerator,
+      ClockProvider clockProvider,
+      DomainEventPublisher domainEventPublisher
+  ) {
+    this.organizationRepository = Objects.requireNonNull(
+        organizationRepository
+    );
+    this.eventIdGenerator = Objects.requireNonNull(
+        eventIdGenerator
+    );
+    this.clockProvider = Objects.requireNonNull(
+        clockProvider
+    );
+    this.domainEventPublisher = Objects.requireNonNull(
+        domainEventPublisher
+    );
+  }
 
-    public ChangeHeadquartersResult handle(
-            ChangeHeadquartersCommand command
-    ) {
-        Objects.requireNonNull(command, "Command cannot be null");
+  public ChangeHeadquartersResult handle(
+      ChangeHeadquartersCommand command
+  ) {
+    Objects.requireNonNull(command, "Command cannot be null");
 
-        Organization organization = organizationRepository
-                .findById(
-                        new OrganizationId(command.organizationId())
-                )
-                .orElseThrow(() ->
-                        new OrganizationNotFoundException(
-                                command.organizationId()
-                        )
-                );
-
-        UUID eventId = Objects.requireNonNull(
-                eventIdGenerator.generate(),
-                "Generated event id cannot be null"
+    Organization organization = organizationRepository
+        .findById(
+            new OrganizationId(command.organizationId())
+        )
+        .orElseThrow(() ->
+            new OrganizationNotFoundException(
+                command.organizationId()
+            )
         );
 
-        Instant changedAt = Objects.requireNonNull(
-                clockProvider.now(),
-                "Current time cannot be null"
-        );
+    UUID eventId = Objects.requireNonNull(
+        eventIdGenerator.generate(),
+        "Generated event id cannot be null"
+    );
 
-        StoreId newHeadquartersId =
-                new StoreId(command.newHeadquartersId());
+    Instant changedAt = Objects.requireNonNull(
+        clockProvider.now(),
+        "Current time cannot be null"
+    );
 
-        organization.changeHeadquarters(
-                newHeadquartersId,
-                eventId,
-                changedAt
-        );
+    StoreId newHeadquartersId =
+        new StoreId(command.newHeadquartersId());
 
-        Organization savedOrganization =
-                organizationRepository.save(organization);
+    organization.changeHeadquarters(
+        newHeadquartersId,
+        eventId,
+        changedAt
+    );
 
-        domainEventPublisher.publish(
-                savedOrganization.pullDomainEvents()
-        );
 
-        return new ChangeHeadquartersResult(
-                savedOrganization.id().value(),
-                newHeadquartersId.value(),
-                changedAt
-        );
-    }
+        organizationRepository.save(organization);
+
+    domainEventPublisher.publish(
+        organization.pullDomainEvents()
+    );
+
+    return new ChangeHeadquartersResult(
+        organization.id().value(),
+        newHeadquartersId.value(),
+        changedAt
+    );
+  }
 }

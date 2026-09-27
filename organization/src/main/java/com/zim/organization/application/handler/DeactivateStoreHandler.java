@@ -16,78 +16,78 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
-public final class DeactivateStoreHandler {
+public class DeactivateStoreHandler {
 
-    private final OrganizationRepository organizationRepository;
-    private final EventIdGenerator eventIdGenerator;
-    private final ClockProvider clockProvider;
-    private final DomainEventPublisher domainEventPublisher;
+  private final OrganizationRepository organizationRepository;
+  private final EventIdGenerator eventIdGenerator;
+  private final ClockProvider clockProvider;
+  private final DomainEventPublisher domainEventPublisher;
 
-    public DeactivateStoreHandler(
-            OrganizationRepository organizationRepository,
-            EventIdGenerator eventIdGenerator,
-            ClockProvider clockProvider,
-            DomainEventPublisher domainEventPublisher
-    ) {
-        this.organizationRepository = Objects.requireNonNull(
-                organizationRepository
-        );
-        this.eventIdGenerator = Objects.requireNonNull(
-                eventIdGenerator
-        );
-        this.clockProvider = Objects.requireNonNull(
-                clockProvider
-        );
-        this.domainEventPublisher = Objects.requireNonNull(
-                domainEventPublisher
-        );
-    }
+  public DeactivateStoreHandler(
+      OrganizationRepository organizationRepository,
+      EventIdGenerator eventIdGenerator,
+      ClockProvider clockProvider,
+      DomainEventPublisher domainEventPublisher
+  ) {
+    this.organizationRepository = Objects.requireNonNull(
+        organizationRepository
+    );
+    this.eventIdGenerator = Objects.requireNonNull(
+        eventIdGenerator
+    );
+    this.clockProvider = Objects.requireNonNull(
+        clockProvider
+    );
+    this.domainEventPublisher = Objects.requireNonNull(
+        domainEventPublisher
+    );
+  }
 
-    public DeactivateStoreResult handle(
-            DeactivateStoreCommand command
-    ) {
-        Objects.requireNonNull(command, "Command cannot be null");
+  public DeactivateStoreResult handle(
+      DeactivateStoreCommand command
+  ) {
+    Objects.requireNonNull(command, "Command cannot be null");
 
-        Organization organization = organizationRepository
-                .findById(
-                        new OrganizationId(command.organizationId())
-                )
-                .orElseThrow(() ->
-                        new OrganizationNotFoundException(
-                                command.organizationId()
-                        )
-                );
-
-        StoreId storeId = new StoreId(command.storeId());
-
-        UUID eventId = Objects.requireNonNull(
-                eventIdGenerator.generate(),
-                "Generated event id cannot be null"
+    Organization organization = organizationRepository
+        .findById(
+            new OrganizationId(command.organizationId())
+        )
+        .orElseThrow(() ->
+            new OrganizationNotFoundException(
+                command.organizationId()
+            )
         );
 
-        Instant deactivatedAt = Objects.requireNonNull(
-                clockProvider.now(),
-                "Current time cannot be null"
-        );
+    StoreId storeId = new StoreId(command.storeId());
 
-        organization.deactivateStore(
-                storeId,
-                eventId,
-                deactivatedAt
-        );
+    UUID eventId = Objects.requireNonNull(
+        eventIdGenerator.generate(),
+        "Generated event id cannot be null"
+    );
 
-        Organization savedOrganization =
-                organizationRepository.save(organization);
+    Instant deactivatedAt = Objects.requireNonNull(
+        clockProvider.now(),
+        "Current time cannot be null"
+    );
 
-        domainEventPublisher.publish(
-                savedOrganization.pullDomainEvents()
-        );
+    organization.deactivateStore(
+        storeId,
+        eventId,
+        deactivatedAt
+    );
 
-        return new DeactivateStoreResult(
-                savedOrganization.id().value(),
-                storeId.value(),
-                false,
-                deactivatedAt
-        );
-    }
+
+        organizationRepository.save(organization);
+
+    domainEventPublisher.publish(
+        organization.pullDomainEvents()
+    );
+
+    return new DeactivateStoreResult(
+        organization.id().value(),
+        storeId.value(),
+        false,
+        deactivatedAt
+    );
+  }
 }
