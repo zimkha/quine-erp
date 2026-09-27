@@ -15,41 +15,41 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class StoreCodeMustBeUniqueRuleTest {
 
-    @Test
-    void shouldBeBrokenWhenStoreCodeAlreadyExists() {
-        Store existingStore = Store.create(
-                new StoreId(UUID.randomUUID()),
-                new StoreCode("THIES-01"),
-                new StoreName("Magasin Thiès"),
-                Instant.parse("2026-08-01T10:00:00Z")
+  @Test
+  void shouldBeBrokenWhenStoreCodeAlreadyExists() {
+    Store existingStore = Store.create(
+        new StoreId(UUID.randomUUID()),
+        new StoreCode("THIES-01"),
+        new StoreName("Magasin Thiès"),
+        Instant.parse("2026-08-01T10:00:00Z")
 
+    );
+
+    StoreCodeMustBeUniqueRule rule =
+        new StoreCodeMustBeUniqueRule(
+            List.of(existingStore),
+            new StoreCode("THIES-01")
         );
 
-        StoreCodeMustBeUniqueRule rule =
-                new StoreCodeMustBeUniqueRule(
-                        List.of(existingStore),
-                        new StoreCode("THIES-01")
-                );
+    assertThat(rule.isBroken()).isTrue();
+  }
 
-        assertThat(rule.isBroken()).isTrue();
-    }
+  @Test
+  void shouldNotBeBrokenWhenStoreCodeIsUnique() {
+    Store existingStore = Store.create(
+        new StoreId(UUID.randomUUID()),
+        new StoreCode("THIES-01"),
+        new StoreName("Magasin Thiès"),
+        Instant.parse("2026-08-01T10:00:00Z")
 
-    @Test
-    void shouldNotBeBrokenWhenStoreCodeIsUnique() {
-        Store existingStore = Store.create(
-                new StoreId(UUID.randomUUID()),
-                new StoreCode("THIES-01"),
-                new StoreName("Magasin Thiès"),
-                Instant.parse("2026-08-01T10:00:00Z")
+    );
 
+    StoreCodeMustBeUniqueRule rule =
+        new StoreCodeMustBeUniqueRule(
+            List.of(existingStore),
+            new StoreCode("DAKAR-01")
         );
 
-        StoreCodeMustBeUniqueRule rule =
-                new StoreCodeMustBeUniqueRule(
-                        List.of(existingStore),
-                        new StoreCode("DAKAR-01")
-                );
-
-        assertThat(rule.isBroken()).isFalse();
-    }
+    assertThat(rule.isBroken()).isFalse();
+  }
 }

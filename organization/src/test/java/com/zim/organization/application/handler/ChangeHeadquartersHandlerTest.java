@@ -95,7 +95,10 @@ class ChangeHeadquartersHandlerTest {
         .isEqualTo(CHANGED_AT);
 
     Organization savedOrganization = repository
-        .findById(new TenantId(TENANT_UUID), new OrganizationId(ORGANIZATION_UUID))
+        .findById(
+            new TenantId(TENANT_UUID),
+            new OrganizationId(ORGANIZATION_UUID)
+        )
         .orElseThrow();
 
     assertThat(savedOrganization.stores())
@@ -300,7 +303,10 @@ class ChangeHeadquartersHandlerTest {
   private void assertHeadquartersUnchanged() {
     assertThat(
         repository
-            .findById(new TenantId(TENANT_UUID), new OrganizationId(ORGANIZATION_UUID))
+            .findById(
+                new TenantId(TENANT_UUID),
+                new OrganizationId(ORGANIZATION_UUID)
+            )
             .orElseThrow()
             .stores()
     )

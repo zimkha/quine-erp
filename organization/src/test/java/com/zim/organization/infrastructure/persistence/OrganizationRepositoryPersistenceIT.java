@@ -13,265 +13,265 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class OrganizationRepositoryPersistenceIT
-        extends OrganizationIntegrationTestSupport {
+    extends OrganizationIntegrationTestSupport {
 
-    @Test
-    void shouldSaveAndReloadOrganization() {
-        // Given
-        Organization organization = pendingOrganization();
+  @Test
+  void shouldSaveAndReloadOrganization() {
+    // Given
+    Organization organization = pendingOrganization();
 
-        // When
-        repositoryAdapter.save(organization);
+    // When
+    repositoryAdapter.save(organization);
 
-        flushAndClear();
+    flushAndClear();
 
-        Organization reloaded = reloadOrganization();
+    Organization reloaded = reloadOrganization();
 
-        // Then
-        assertThat(reloaded.id())
-                .isEqualTo(
-                        new OrganizationId(ORGANIZATION_UUID)
-                );
+    // Then
+    assertThat(reloaded.id())
+        .isEqualTo(
+            new OrganizationId(ORGANIZATION_UUID)
+        );
 
-        assertThat(reloaded.tenantId())
-                .isEqualTo(
-                        new TenantId(TENANT_UUID)
-                );
+    assertThat(reloaded.tenantId())
+        .isEqualTo(
+            new TenantId(TENANT_UUID)
+        );
 
-        assertThat(reloaded.name().value())
-                .isEqualTo("Quincaillerie Thiès");
+    assertThat(reloaded.name().value())
+        .isEqualTo("Quincaillerie Thiès");
 
-        assertThat(reloaded.legalName().value())
-                .isEqualTo("Quincaillerie Thiès SARL");
+    assertThat(reloaded.legalName().value())
+        .isEqualTo("Quincaillerie Thiès SARL");
 
-        assertThat(reloaded.legalName().normalizedValue())
-                .isEqualTo("QUINCAILLERIE THIÈS SARL");
+    assertThat(reloaded.legalName().normalizedValue())
+        .isEqualTo("QUINCAILLERIE THIÈS SARL");
 
-        assertThat(reloaded.currency().value())
-                .isEqualTo("XOF");
+    assertThat(reloaded.currency().value())
+        .isEqualTo("XOF");
 
-        assertThat(reloaded.status())
-                .isEqualTo(
-                        OrganizationStatus.PENDING_ACTIVATION
-                );
+    assertThat(reloaded.status())
+        .isEqualTo(
+            OrganizationStatus.PENDING_ACTIVATION
+        );
 
-        assertThat(reloaded.createdAt())
-                .isEqualTo(CREATED_AT);
+    assertThat(reloaded.createdAt())
+        .isEqualTo(CREATED_AT);
 
-        assertThat(reloaded.stores())
-                .hasSize(1)
-                .singleElement()
-                .satisfies(store -> {
-                    assertThat(store.id().value())
-                            .isEqualTo(HEADQUARTERS_UUID);
+    assertThat(reloaded.stores())
+        .hasSize(1)
+        .singleElement()
+        .satisfies(store -> {
+          assertThat(store.id().value())
+              .isEqualTo(HEADQUARTERS_UUID);
 
-                    assertThat(store.code().value())
-                            .isEqualTo("THIES-01");
+          assertThat(store.code().value())
+              .isEqualTo("THIES-01");
 
-                    assertThat(store.name().value())
-                            .isEqualTo("Magasin principal");
+          assertThat(store.name().value())
+              .isEqualTo("Magasin principal");
 
-                    assertThat(store.isHeadquarters())
-                            .isTrue();
+          assertThat(store.isHeadquarters())
+              .isTrue();
 
-                    assertThat(store.isActive())
-                            .isTrue();
+          assertThat(store.isActive())
+              .isTrue();
 
-                    assertThat(store.createdAt())
-                            .isEqualTo(CREATED_AT);
-                });
+          assertThat(store.createdAt())
+              .isEqualTo(CREATED_AT);
+        });
 
-        assertThat(reloaded.domainEvents())
-                .isEmpty();
-    }
+    assertThat(reloaded.domainEvents())
+        .isEmpty();
+  }
 
-    @Test
-    void shouldFindOrganizationOwnedByTenant() {
-        // Given
-        Organization organization = pendingOrganization();
+  @Test
+  void shouldFindOrganizationOwnedByTenant() {
+    // Given
+    Organization organization = pendingOrganization();
 
-        repositoryAdapter.save(organization);
+    repositoryAdapter.save(organization);
 
-        flushAndClear();
+    flushAndClear();
 
-        // When
-        Optional<Organization> result =
-                repositoryAdapter.findById(
-                        new TenantId(TENANT_UUID),
-                        new OrganizationId(ORGANIZATION_UUID)
-                );
+    // When
+    Optional<Organization> result =
+        repositoryAdapter.findById(
+            new TenantId(TENANT_UUID),
+            new OrganizationId(ORGANIZATION_UUID)
+        );
 
-        // Then
-        assertThat(result)
-                .isPresent()
-                .get()
-                .satisfies(found -> {
-                    assertThat(found.id())
-                            .isEqualTo(
-                                    new OrganizationId(
-                                            ORGANIZATION_UUID
-                                    )
-                            );
+    // Then
+    assertThat(result)
+        .isPresent()
+        .get()
+        .satisfies(found -> {
+          assertThat(found.id())
+              .isEqualTo(
+                  new OrganizationId(
+                      ORGANIZATION_UUID
+                  )
+              );
 
-                    assertThat(found.tenantId())
-                            .isEqualTo(
-                                    new TenantId(
-                                            TENANT_UUID
-                                    )
-                            );
+          assertThat(found.tenantId())
+              .isEqualTo(
+                  new TenantId(
+                      TENANT_UUID
+                  )
+              );
 
-                    assertThat(found.name().value())
-                            .isEqualTo(
-                                    "Quincaillerie Thiès"
-                            );
+          assertThat(found.name().value())
+              .isEqualTo(
+                  "Quincaillerie Thiès"
+              );
 
-                    assertThat(found.legalName().value())
-                            .isEqualTo(
-                                    "Quincaillerie Thiès SARL"
-                            );
+          assertThat(found.legalName().value())
+              .isEqualTo(
+                  "Quincaillerie Thiès SARL"
+              );
 
-                    assertThat(
-                            found.legalName()
-                                    .normalizedValue()
-                    )
-                            .isEqualTo(
-                                    "QUINCAILLERIE THIÈS SARL"
-                            );
+          assertThat(
+              found.legalName()
+                  .normalizedValue()
+          )
+              .isEqualTo(
+                  "QUINCAILLERIE THIÈS SARL"
+              );
 
-                    assertThat(found.currency().value())
-                            .isEqualTo("XOF");
+          assertThat(found.currency().value())
+              .isEqualTo("XOF");
 
-                    assertThat(found.status())
-                            .isEqualTo(
-                                    OrganizationStatus
-                                            .PENDING_ACTIVATION
-                            );
+          assertThat(found.status())
+              .isEqualTo(
+                  OrganizationStatus
+                      .PENDING_ACTIVATION
+              );
 
-                    assertThat(found.stores())
-                            .hasSize(1);
-                });
-    }
+          assertThat(found.stores())
+              .hasSize(1);
+        });
+  }
 
-    @Test
-    void shouldReturnEmptyWhenTenantDoesNotOwnOrganization() {
-        // Given
-        repositoryAdapter.save(pendingOrganization());
+  @Test
+  void shouldReturnEmptyWhenTenantDoesNotOwnOrganization() {
+    // Given
+    repositoryAdapter.save(pendingOrganization());
 
-        flushAndClear();
+    flushAndClear();
 
-        TenantId unknownTenantId =
-                new TenantId(UUID.randomUUID());
+    TenantId unknownTenantId =
+        new TenantId(UUID.randomUUID());
 
-        // When
-        Optional<Organization> result =
-                repositoryAdapter.findById(
-                        unknownTenantId,
-                        new OrganizationId(ORGANIZATION_UUID)
-                );
+    // When
+    Optional<Organization> result =
+        repositoryAdapter.findById(
+            unknownTenantId,
+            new OrganizationId(ORGANIZATION_UUID)
+        );
 
-        // Then
-        assertThat(result).isEmpty();
-    }
+    // Then
+    assertThat(result).isEmpty();
+  }
 
-    @Test
-    void shouldDetectExistingNormalizedLegalName() {
-        // Given
-        Organization organization = pendingOrganization();
+  @Test
+  void shouldDetectExistingNormalizedLegalName() {
+    // Given
+    Organization organization = pendingOrganization();
 
-        repositoryAdapter.save(organization);
+    repositoryAdapter.save(organization);
 
-        flushAndClear();
+    flushAndClear();
 
-        // When
-        boolean exists =
-                repositoryAdapter.existsByLegalName(
-                        "QUINCAILLERIE THIÈS SARL"
-                );
+    // When
+    boolean exists =
+        repositoryAdapter.existsByLegalName(
+            "QUINCAILLERIE THIÈS SARL"
+        );
 
-        // Then
-        assertThat(exists).isTrue();
-    }
+    // Then
+    assertThat(exists).isTrue();
+  }
 
-    @Test
-    void shouldReturnFalseWhenLegalNameDoesNotExist() {
-        // Given
-        Organization organization = pendingOrganization();
+  @Test
+  void shouldReturnFalseWhenLegalNameDoesNotExist() {
+    // Given
+    Organization organization = pendingOrganization();
 
-        repositoryAdapter.save(organization);
+    repositoryAdapter.save(organization);
 
-        flushAndClear();
+    flushAndClear();
 
-        // When
-        boolean exists =
-                repositoryAdapter.existsByLegalName(
-                        "ENTREPRISE INEXISTANTE SARL"
-                );
+    // When
+    boolean exists =
+        repositoryAdapter.existsByLegalName(
+            "ENTREPRISE INEXISTANTE SARL"
+        );
 
-        // Then
-        assertThat(exists).isFalse();
-    }
+    // Then
+    assertThat(exists).isFalse();
+  }
 
-    @Test
-    void shouldFindOrganizationById() {
-        // Given
-        Organization organization = pendingOrganization();
+  @Test
+  void shouldFindOrganizationById() {
+    // Given
+    Organization organization = pendingOrganization();
 
-        repositoryAdapter.save(organization);
+    repositoryAdapter.save(organization);
 
-        flushAndClear();
+    flushAndClear();
 
-        // When
-        Optional<Organization> result =
-                repositoryAdapter.findById(
-                        new TenantId(TENANT_UUID),
-                        new OrganizationId(
-                                ORGANIZATION_UUID
-                        )
-                );
+    // When
+    Optional<Organization> result =
+        repositoryAdapter.findById(
+            new TenantId(TENANT_UUID),
+            new OrganizationId(
+                ORGANIZATION_UUID
+            )
+        );
 
-        // Then
-        assertThat(result)
-                .isPresent()
-                .get()
-                .satisfies(found -> {
-                    assertThat(found.id())
-                            .isEqualTo(
-                                    new OrganizationId(
-                                            ORGANIZATION_UUID
-                                    )
-                            );
+    // Then
+    assertThat(result)
+        .isPresent()
+        .get()
+        .satisfies(found -> {
+          assertThat(found.id())
+              .isEqualTo(
+                  new OrganizationId(
+                      ORGANIZATION_UUID
+                  )
+              );
 
-                    assertThat(found.tenantId())
-                            .isEqualTo(
-                                    new TenantId(
-                                            TENANT_UUID
-                                    )
-                            );
+          assertThat(found.tenantId())
+              .isEqualTo(
+                  new TenantId(
+                      TENANT_UUID
+                  )
+              );
 
-                    assertThat(found.status())
-                            .isEqualTo(
-                                    OrganizationStatus
-                                            .PENDING_ACTIVATION
-                            );
-                });
-    }
+          assertThat(found.status())
+              .isEqualTo(
+                  OrganizationStatus
+                      .PENDING_ACTIVATION
+              );
+        });
+  }
 
-    @Test
-    void shouldReturnEmptyWhenOrganizationIdDoesNotExist() {
-        // Given
-        OrganizationId unknownOrganizationId =
-                new OrganizationId(
-                        UUID.randomUUID()
-                );
+  @Test
+  void shouldReturnEmptyWhenOrganizationIdDoesNotExist() {
+    // Given
+    OrganizationId unknownOrganizationId =
+        new OrganizationId(
+            UUID.randomUUID()
+        );
 
-        // When
-        Optional<Organization> result =
-                repositoryAdapter.findById(
-                        new TenantId(TENANT_UUID),
-                        unknownOrganizationId
-                );
+    // When
+    Optional<Organization> result =
+        repositoryAdapter.findById(
+            new TenantId(TENANT_UUID),
+            unknownOrganizationId
+        );
 
-        // Then
-        assertThat(result).isEmpty();
-    }
+    // Then
+    assertThat(result).isEmpty();
+  }
 }

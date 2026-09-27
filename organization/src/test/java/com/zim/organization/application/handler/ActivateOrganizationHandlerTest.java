@@ -23,211 +23,217 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ActivateOrganizationHandlerTest {
 
-    private static final UUID ORGANIZATION_UUID =
-            UUID.fromString(
-                    "5c80d578-83f7-4b44-b5f7-598530067a09"
-            );
+  private static final UUID ORGANIZATION_UUID =
+      UUID.fromString(
+          "5c80d578-83f7-4b44-b5f7-598530067a09"
+      );
 
-    private static final UUID TENANT_UUID =
-            UUID.fromString(
-                    "2d3a7d37-ef2c-4794-b248-b08acf42eb38"
-            );
+  private static final UUID TENANT_UUID =
+      UUID.fromString(
+          "2d3a7d37-ef2c-4794-b248-b08acf42eb38"
+      );
 
   private static final UUID OTHER_TENANT_UUID =
       UUID.fromString("9a4c2e71-5b3d-4f8a-b6c1-0d2e4f6a8b13");
 
-    private static final UUID STORE_UUID =
-            UUID.fromString(
-                    "4ee0d038-4617-435c-b7c8-48697d4cf909"
-            );
+  private static final UUID STORE_UUID =
+      UUID.fromString(
+          "4ee0d038-4617-435c-b7c8-48697d4cf909"
+      );
 
-    private static final UUID ACTIVATION_EVENT_UUID =
-            UUID.fromString(
-                    "5a428239-6f21-48fb-8d6f-a7953cbb3a97"
-            );
+  private static final UUID ACTIVATION_EVENT_UUID =
+      UUID.fromString(
+          "5a428239-6f21-48fb-8d6f-a7953cbb3a97"
+      );
 
-    private static final Instant CREATED_AT =
-            Instant.parse("2026-08-01T10:00:00Z");
+  private static final Instant CREATED_AT =
+      Instant.parse("2026-08-01T10:00:00Z");
 
-    private static final Instant ACTIVATED_AT =
-            Instant.parse("2026-08-02T10:00:00Z");
+  private static final Instant ACTIVATED_AT =
+      Instant.parse("2026-08-02T10:00:00Z");
 
-    LegalName legalName;
+  LegalName legalName;
 
-    private InMemoryOrganizationRepository repository;
-    private InMemoryDomainEventPublisher publisher;
-    private ActivateOrganizationHandler handler;
+  private InMemoryOrganizationRepository repository;
+  private InMemoryDomainEventPublisher publisher;
+  private ActivateOrganizationHandler handler;
 
-    @BeforeEach
-    void setUp() {
-        repository = new InMemoryOrganizationRepository();
-        publisher = new InMemoryDomainEventPublisher();
+  @BeforeEach
+  void setUp() {
+    repository = new InMemoryOrganizationRepository();
+    publisher = new InMemoryDomainEventPublisher();
 
-        handler = new ActivateOrganizationHandler(
-                repository,
-                () -> ACTIVATION_EVENT_UUID,
-                () -> ACTIVATED_AT,
-                publisher
-        );
-    }
+    handler = new ActivateOrganizationHandler(
+        repository,
+        () -> ACTIVATION_EVENT_UUID,
+        () -> ACTIVATED_AT,
+        publisher
+    );
+  }
 
-    @Test
-    void shouldActivatePendingOrganization() {
-        Organization organization = pendingOrganization();
+  @Test
+  void shouldActivatePendingOrganization() {
+    Organization organization = pendingOrganization();
 
-        // L’événement d’enregistrement appartient au cas d’usage précédent.
-        organization.clearDomainEvents();
+    // L’événement d’enregistrement appartient au cas d’usage précédent.
+    organization.clearDomainEvents();
 
-        repository.add(organization);
+    repository.add(organization);
 
-        ActivateOrganizationResult result = handler.handle(
-                new ActivateOrganizationCommand(new TenantId(TENANT_UUID), ORGANIZATION_UUID)
-        );
+    ActivateOrganizationResult result = handler.handle(
+        new ActivateOrganizationCommand(new TenantId(TENANT_UUID), ORGANIZATION_UUID)
+    );
 
-        assertThat(result.organizationId())
-                .isEqualTo(ORGANIZATION_UUID);
+    assertThat(result.organizationId())
+        .isEqualTo(ORGANIZATION_UUID);
 
-        assertThat(result.tenantId())
-                .isEqualTo(TENANT_UUID);
+    assertThat(result.tenantId())
+        .isEqualTo(TENANT_UUID);
 
-        assertThat(result.status())
-                .isEqualTo(OrganizationStatus.ACTIVE.name());
+    assertThat(result.status())
+        .isEqualTo(OrganizationStatus.ACTIVE.name());
 
-        assertThat(result.activatedAt())
-                .isEqualTo(ACTIVATED_AT);
+    assertThat(result.activatedAt())
+        .isEqualTo(ACTIVATED_AT);
 
-        Organization savedOrganization = repository
-                .findById(new TenantId(TENANT_UUID), new OrganizationId(ORGANIZATION_UUID))
-                .orElseThrow();
-
-        assertThat(savedOrganization.status())
-                .isEqualTo(OrganizationStatus.ACTIVE);
-    }
-
-    @Test
-    void shouldPublishOrganizationActivatedEvent() {
-        Organization organization = pendingOrganization();
-        organization.clearDomainEvents();
-
-        repository.add(organization);
-
-        handler.handle(
-                new ActivateOrganizationCommand(new TenantId(TENANT_UUID), ORGANIZATION_UUID)
-        );
-
-        assertThat(publisher.publishedEvents())
-                .singleElement()
-                .isInstanceOf(OrganizationActivated.class);
-
-        OrganizationActivated event =
-                (OrganizationActivated)
-                        publisher.publishedEvents().getFirst();
-
-        assertThat(event.eventId())
-                .isEqualTo(ACTIVATION_EVENT_UUID);
-
-        assertThat(event.organizationId().value())
-                .isEqualTo(ORGANIZATION_UUID);
-
-        assertThat(event.tenantId().value())
-                .isEqualTo(TENANT_UUID);
-
-        assertThat(event.occurredAt())
-                .isEqualTo(ACTIVATED_AT);
-    }
-
-    @Test
-    void shouldRemovePublishedEventsFromAggregate() {
-        Organization organization = pendingOrganization();
-        organization.clearDomainEvents();
-
-        repository.add(organization);
-
-        handler.handle(
-                new ActivateOrganizationCommand(new TenantId(TENANT_UUID), ORGANIZATION_UUID)
-        );
-
-        Organization savedOrganization = repository
-                .findById(new TenantId(TENANT_UUID), new OrganizationId(ORGANIZATION_UUID))
-                .orElseThrow();
-
-        assertThat(savedOrganization.domainEvents())
-                .isEmpty();
-    }
-
-    @Test
-    void shouldRejectUnknownOrganization() {
-        UUID unknownOrganizationId =
-                UUID.fromString(
-                        "dc1ad060-e435-4f82-ab8a-d6755258b7c2"
-                );
-
-        assertThatThrownBy(
-                () -> handler.handle(
-                        new ActivateOrganizationCommand(
-                                new TenantId(TENANT_UUID),
-                                unknownOrganizationId
-                        )
-                )
+    Organization savedOrganization = repository
+        .findById(
+            new TenantId(TENANT_UUID),
+            new OrganizationId(ORGANIZATION_UUID)
         )
-                .isInstanceOf(
-                        OrganizationNotFoundException.class
-                )
-                .satisfies(throwable -> {
-                    OrganizationNotFoundException exception =
-                            (OrganizationNotFoundException) throwable;
+        .orElseThrow();
 
-                    assertThat(exception.code())
-                            .isEqualTo("ORGANIZATION_NOT_FOUND");
+    assertThat(savedOrganization.status())
+        .isEqualTo(OrganizationStatus.ACTIVE);
+  }
 
-                    assertThat(exception.organizationId())
-                            .isEqualTo(unknownOrganizationId);
-                });
+  @Test
+  void shouldPublishOrganizationActivatedEvent() {
+    Organization organization = pendingOrganization();
+    organization.clearDomainEvents();
 
-        assertThat(publisher.publishedEvents()).isEmpty();
-    }
+    repository.add(organization);
 
-    @Test
-    void shouldRejectAlreadyActiveOrganization() {
-        Organization organization = pendingOrganization();
-        organization.clearDomainEvents();
+    handler.handle(
+        new ActivateOrganizationCommand(new TenantId(TENANT_UUID), ORGANIZATION_UUID)
+    );
 
-        organization.activate(
-                UUID.randomUUID(),
-                Instant.parse("2026-08-01T12:00:00Z")
+    assertThat(publisher.publishedEvents())
+        .singleElement()
+        .isInstanceOf(OrganizationActivated.class);
+
+    OrganizationActivated event =
+        (OrganizationActivated)
+            publisher.publishedEvents().getFirst();
+
+    assertThat(event.eventId())
+        .isEqualTo(ACTIVATION_EVENT_UUID);
+
+    assertThat(event.organizationId().value())
+        .isEqualTo(ORGANIZATION_UUID);
+
+    assertThat(event.tenantId().value())
+        .isEqualTo(TENANT_UUID);
+
+    assertThat(event.occurredAt())
+        .isEqualTo(ACTIVATED_AT);
+  }
+
+  @Test
+  void shouldRemovePublishedEventsFromAggregate() {
+    Organization organization = pendingOrganization();
+    organization.clearDomainEvents();
+
+    repository.add(organization);
+
+    handler.handle(
+        new ActivateOrganizationCommand(new TenantId(TENANT_UUID), ORGANIZATION_UUID)
+    );
+
+    Organization savedOrganization = repository
+        .findById(
+            new TenantId(TENANT_UUID),
+            new OrganizationId(ORGANIZATION_UUID)
+        )
+        .orElseThrow();
+
+    assertThat(savedOrganization.domainEvents())
+        .isEmpty();
+  }
+
+  @Test
+  void shouldRejectUnknownOrganization() {
+    UUID unknownOrganizationId =
+        UUID.fromString(
+            "dc1ad060-e435-4f82-ab8a-d6755258b7c2"
         );
 
-        organization.clearDomainEvents();
-        repository.add(organization);
-
-        assertThatThrownBy(
-                () -> handler.handle(
-                        new ActivateOrganizationCommand(
-                                new TenantId(TENANT_UUID),
-                                ORGANIZATION_UUID
-                        )
-                )
+    assertThatThrownBy(
+        () -> handler.handle(
+            new ActivateOrganizationCommand(
+                new TenantId(TENANT_UUID),
+                unknownOrganizationId
+            )
         )
-                .isInstanceOf(
-                        BusinessRuleViolationException.class
-                )
-                .satisfies(throwable -> {
-                    BusinessRuleViolationException exception =
-                            (BusinessRuleViolationException) throwable;
+    )
+        .isInstanceOf(
+            OrganizationNotFoundException.class
+        )
+        .satisfies(throwable -> {
+          OrganizationNotFoundException exception =
+              (OrganizationNotFoundException) throwable;
 
-                    assertThat(exception.code())
-                            .isEqualTo(
-                                    "ORGANIZATION_CANNOT_BE_ACTIVATED"
-                            );
+          assertThat(exception.code())
+              .isEqualTo("ORGANIZATION_NOT_FOUND");
 
-                    assertThat(exception.ruleName())
-                            .isEqualTo(
-                                    "OrganizationMustBeActivatableRule"
-                            );
-                });
+          assertThat(exception.organizationId())
+              .isEqualTo(unknownOrganizationId);
+        });
 
-        assertThat(publisher.publishedEvents()).isEmpty();
-    }
+    assertThat(publisher.publishedEvents()).isEmpty();
+  }
+
+  @Test
+  void shouldRejectAlreadyActiveOrganization() {
+    Organization organization = pendingOrganization();
+    organization.clearDomainEvents();
+
+    organization.activate(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-01T12:00:00Z")
+    );
+
+    organization.clearDomainEvents();
+    repository.add(organization);
+
+    assertThatThrownBy(
+        () -> handler.handle(
+            new ActivateOrganizationCommand(
+                new TenantId(TENANT_UUID),
+                ORGANIZATION_UUID
+            )
+        )
+    )
+        .isInstanceOf(
+            BusinessRuleViolationException.class
+        )
+        .satisfies(throwable -> {
+          BusinessRuleViolationException exception =
+              (BusinessRuleViolationException) throwable;
+
+          assertThat(exception.code())
+              .isEqualTo(
+                  "ORGANIZATION_CANNOT_BE_ACTIVATED"
+              );
+
+          assertThat(exception.ruleName())
+              .isEqualTo(
+                  "OrganizationMustBeActivatableRule"
+              );
+        });
+
+    assertThat(publisher.publishedEvents()).isEmpty();
+  }
 
   @Test
   void shouldNotActivateOrganizationOwnedByAnotherTenant() {
@@ -271,20 +277,20 @@ class ActivateOrganizationHandlerTest {
         .isEqualTo(OrganizationStatus.ACTIVE);
   }
 
-    private static Organization pendingOrganization() {
-        return Organization.register(
-                new OrganizationId(ORGANIZATION_UUID),
-                new TenantId(TENANT_UUID),
-                new OrganizationName("Quincaillerie Thiès"),
-                new LegalName("QUINCAILLERIE THIÈS SARL"),
-                CurrencyCode.xof(),
-                new StoreId(STORE_UUID),
-                new StoreCode("THIES-01"),
-                new StoreName("Magasin principal"),
-                UUID.fromString(
-                        "f84f8ce3-803f-45a5-a552-d7313f9f7cf8"
-                ),
-                CREATED_AT
-        );
-    }
+  private static Organization pendingOrganization() {
+    return Organization.register(
+        new OrganizationId(ORGANIZATION_UUID),
+        new TenantId(TENANT_UUID),
+        new OrganizationName("Quincaillerie Thiès"),
+        new LegalName("QUINCAILLERIE THIÈS SARL"),
+        CurrencyCode.xof(),
+        new StoreId(STORE_UUID),
+        new StoreCode("THIES-01"),
+        new StoreName("Magasin principal"),
+        UUID.fromString(
+            "f84f8ce3-803f-45a5-a552-d7313f9f7cf8"
+        ),
+        CREATED_AT
+    );
+  }
 }
