@@ -304,7 +304,7 @@ As the team, we want a single framework-free port that tells the application whi
   - In `OrganizationControllerTest`, supply the provider with `@MockitoBean`, and add:
     - register succeeding with a throwing stub provider in the context
     - register ignoring a caller-supplied `tenantId` and tenant header
-- **`*IT`:** existing ITs stay green with the default bean present.
+- **`*IT`:** existing ITs stay green without any `CurrentTenantProvider` bean (Architect decision 2).
 - **Framework-free kernel:** `shared` still has no Spring dependency.
 
 **Open questions**
