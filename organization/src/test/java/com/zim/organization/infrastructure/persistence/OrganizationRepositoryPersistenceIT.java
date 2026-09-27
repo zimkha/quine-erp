@@ -3,7 +3,7 @@ package com.zim.organization.infrastructure.persistence;
 import com.zim.organization.domain.model.Organization;
 import com.zim.organization.domain.model.OrganizationStatus;
 import com.zim.organization.domain.valueobject.OrganizationId;
-import com.zim.organization.domain.valueobject.TenantId;
+import com.zim.shared.domain.TenantId;
 import com.zim.organization.infrastructure.persistence.support.OrganizationIntegrationTestSupport;
 import org.junit.jupiter.api.Test;
 

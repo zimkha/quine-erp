@@ -8,7 +8,7 @@ import com.zim.organization.domain.valueobject.OrganizationName;
 import com.zim.organization.domain.valueobject.StoreCode;
 import com.zim.organization.domain.valueobject.StoreId;
 import com.zim.organization.domain.valueobject.StoreName;
-import com.zim.organization.domain.valueobject.TenantId;
+import com.zim.shared.domain.TenantId;
 import com.zim.organization.infrastructure.persistence.adapteur.OrganizationRepositoryAdapter;
 import com.zim.organization.infrastructure.persistence.mapper.OrganizationPersistenceMapper;
 import com.zim.organization.infrastructure.persistence.repository.SpringDataOrganizationRepository;

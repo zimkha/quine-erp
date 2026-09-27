@@ -3,7 +3,7 @@ package com.zim.organization.domain.event;
 import com.zim.organization.domain.valueobject.OrganizationId;
 import com.zim.organization.domain.valueobject.StoreCode;
 import com.zim.organization.domain.valueobject.StoreId;
-import com.zim.organization.domain.valueobject.TenantId;
+import com.zim.shared.domain.TenantId;
 import com.zim.shared.domain.DomainEvent;
 
 import java.time.Instant;

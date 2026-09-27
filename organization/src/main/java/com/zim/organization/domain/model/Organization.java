@@ -3,6 +3,7 @@ package com.zim.organization.domain.model;
 import com.zim.organization.domain.event.*;
 import com.zim.organization.domain.rule.*;
 import com.zim.organization.domain.valueobject.*;
+import com.zim.shared.domain.TenantId;
 import com.zim.shared.domain.AggregateRoot;
 
 import com.zim.organization.domain.rule.HeadquartersCannotBeDeactivatedRule;

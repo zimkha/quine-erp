@@ -94,8 +94,8 @@ requests to `application` commands.
 
 ### Multi-tenancy
 
-Aggregates carry a `TenantId` value object (`com.zim.organization.domain.valueobject.TenantId`,
-a `UUID` wrapper). Keep this in mind when adding new aggregates/tables in any module — tenant
+Aggregates carry a `TenantId` value object (`com.zim.shared.domain.TenantId` in the shared
+kernel, a `UUID` wrapper). Keep this in mind when adding new aggregates/tables in any module — tenant
 scoping is a cross-cutting concern of the domain model, not bolted on at the persistence layer.
 
 ### Database

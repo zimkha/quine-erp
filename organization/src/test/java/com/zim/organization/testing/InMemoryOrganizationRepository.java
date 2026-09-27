@@ -5,7 +5,7 @@ import com.zim.organization.domain.model.Organization;
 import com.zim.organization.domain.repository.OrganizationRepository;
 import com.zim.organization.domain.valueobject.LegalName;
 import com.zim.organization.domain.valueobject.OrganizationId;
-import com.zim.organization.domain.valueobject.TenantId;
+import com.zim.shared.domain.TenantId;
 
 import java.util.*;
 

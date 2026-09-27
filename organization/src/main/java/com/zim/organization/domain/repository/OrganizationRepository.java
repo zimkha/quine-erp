@@ -3,7 +3,7 @@ package com.zim.organization.domain.repository;
 
 import com.zim.organization.domain.model.Organization;
 import com.zim.organization.domain.valueobject.OrganizationId;
-import com.zim.organization.domain.valueobject.TenantId;
+import com.zim.shared.domain.TenantId;
 
 import java.util.Optional;
 

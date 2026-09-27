@@ -7,6 +7,7 @@ import com.zim.organization.application.result.RegisterOrganizationResult;
 import com.zim.organization.domain.model.Organization;
 import com.zim.organization.domain.repository.OrganizationRepository;
 import com.zim.organization.domain.valueobject.*;
+import com.zim.shared.domain.TenantId;
 
 
 import java.time.Instant;

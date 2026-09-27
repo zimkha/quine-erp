@@ -4,6 +4,7 @@ import com.zim.organization.domain.model.Organization;
 import com.zim.organization.domain.model.OrganizationStatus;
 import com.zim.organization.domain.model.Store;
 import com.zim.organization.domain.valueobject.*;
+import com.zim.shared.domain.TenantId;
 import com.zim.organization.infrastructure.persistence.entity.OrganizationEntity;
 import com.zim.organization.infrastructure.persistence.entity.StoreEntity;
 

@@ -15,7 +15,7 @@ import com.zim.organization.application.port.TenantIdGenerator;
 import com.zim.organization.domain.repository.OrganizationRepository;
 import com.zim.organization.domain.valueobject.OrganizationId;
 import com.zim.organization.domain.valueobject.StoreId;
-import com.zim.organization.domain.valueobject.TenantId;
+import com.zim.shared.domain.TenantId;
 import com.zim.organization.infrastructure.event.SpringDomainEventPublisher;
 import com.zim.organization.infrastructure.persistence.adapteur.OrganizationRepositoryAdapter;
 import com.zim.organization.infrastructure.persistence.mapper.OrganizationPersistenceMapper;

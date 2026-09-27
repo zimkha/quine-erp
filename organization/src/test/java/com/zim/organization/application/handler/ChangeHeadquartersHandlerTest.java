@@ -7,6 +7,7 @@ import com.zim.organization.domain.event.HeadquartersChanged;
 import com.zim.organization.domain.model.Organization;
 import com.zim.organization.domain.model.Store;
 import com.zim.organization.domain.valueobject.*;
+import com.zim.shared.domain.TenantId;
 import com.zim.organization.testing.InMemoryDomainEventPublisher;
 import com.zim.organization.testing.InMemoryOrganizationRepository;
 import com.zim.shared.domain.BusinessRuleViolationException;

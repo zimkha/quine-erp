@@ -1,6 +1,6 @@
 package com.zim.organization.application.port;
 
-import com.zim.organization.domain.valueobject.TenantId;
+import com.zim.shared.domain.TenantId;
 
 @FunctionalInterface
 public interface TenantIdGenerator {
