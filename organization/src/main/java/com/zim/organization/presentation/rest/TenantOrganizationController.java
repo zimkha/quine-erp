@@ -1,10 +1,15 @@
 package com.zim.organization.presentation.rest;
 
 import com.zim.organization.application.command.AddStoreCommand;
+import com.zim.organization.application.command.ChangeHeadquartersCommand;
 import com.zim.organization.application.handler.AddStoreHandler;
+import com.zim.organization.application.handler.ChangeHeadquartersHandler;
 import com.zim.organization.application.result.AddStoreResult;
+import com.zim.organization.application.result.ChangeHeadquartersResult;
 import com.zim.organization.presentation.rest.request.AddStoreRequest;
+import com.zim.organization.presentation.rest.request.ChangeHeadquartersRequest;
 import com.zim.organization.presentation.rest.response.AddStoreResponse;
+import com.zim.organization.presentation.rest.response.ChangeHeadquartersResponse;
 import com.zim.shared.domain.TenantId;
 import com.zim.shared.tenant.CurrentTenantProvider;
 import jakarta.validation.Valid;
@@ -12,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -31,10 +37,12 @@ public class TenantOrganizationController {
 
   private final CurrentTenantProvider currentTenantProvider;
   private final AddStoreHandler addStoreHandler;
+  private final ChangeHeadquartersHandler changeHeadquartersHandler;
 
   public TenantOrganizationController(
       CurrentTenantProvider currentTenantProvider,
-      AddStoreHandler addStoreHandler
+      AddStoreHandler addStoreHandler,
+      ChangeHeadquartersHandler changeHeadquartersHandler
   ) {
     this.currentTenantProvider = Objects.requireNonNull(
         currentTenantProvider,
@@ -43,6 +51,10 @@ public class TenantOrganizationController {
     this.addStoreHandler = Objects.requireNonNull(
         addStoreHandler,
         "Add store handler cannot be null"
+    );
+    this.changeHeadquartersHandler = Objects.requireNonNull(
+        changeHeadquartersHandler,
+        "Change headquarters handler cannot be null"
     );
   }
 
@@ -75,5 +87,34 @@ public class TenantOrganizationController {
     return ResponseEntity
         .status(HttpStatus.CREATED)
         .body(response);
+  }
+
+  /**
+   * Makes another active store of the organization its headquarters. A
+   * repeat is answered with 409 {@code STORE_IS_ALREADY_HEADQUARTERS}, which
+   * clients treat as "target state already reached".
+   */
+  @PutMapping("/headquarters")
+  public ResponseEntity<ChangeHeadquartersResponse> changeHeadquarters(
+      @PathVariable("id") UUID id,
+      @Valid @RequestBody ChangeHeadquartersRequest request
+  ) {
+    TenantId tenantId = currentTenantProvider.currentTenant();
+
+    ChangeHeadquartersResult result = changeHeadquartersHandler.handle(
+        new ChangeHeadquartersCommand(
+            tenantId,
+            id,
+            request.storeId()
+        )
+    );
+
+    ChangeHeadquartersResponse response = new ChangeHeadquartersResponse(
+        result.organizationId(),
+        result.headquartersId(),
+        result.changedAt()
+    );
+
+    return ResponseEntity.ok(response);
   }
 }
