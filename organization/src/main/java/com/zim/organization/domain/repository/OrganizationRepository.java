@@ -9,13 +9,20 @@ import java.util.Optional;
 
 public interface OrganizationRepository {
 
-    void save(Organization organization);
+  void save(Organization organization);
 
-    Optional<Organization> findById(OrganizationId organizationId);
+  /**
+   * Loads the organization only if it is owned by {@code tenantId}. An
+   * organization owned by another tenant is reported as absent, exactly
+   * like one that does not exist.
+   */
+  Optional<Organization> findById(
+      TenantId tenantId,
+      OrganizationId organizationId
+  );
 
-    Optional<Organization> findByTenantId(TenantId tenantId);
-
-    boolean existsByTenantId(TenantId tenantId);
-
-    boolean existsByLegalName(String legalName);
+  /**
+   * Global on purpose: legal names are unique across all tenants.
+   */
+  boolean existsByLegalName(String legalName);
 }

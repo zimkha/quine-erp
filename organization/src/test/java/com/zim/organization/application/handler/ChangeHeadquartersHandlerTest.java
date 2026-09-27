@@ -11,6 +11,7 @@ import com.zim.shared.domain.TenantId;
 import com.zim.organization.testing.InMemoryDomainEventPublisher;
 import com.zim.organization.testing.InMemoryOrganizationRepository;
 import com.zim.shared.domain.BusinessRuleViolationException;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -31,6 +32,9 @@ class ChangeHeadquartersHandlerTest {
       UUID.fromString(
           "7e2c9d14-3b8a-4f6e-a1c5-9d0b2e4f6a81"
       );
+
+  private static final UUID OTHER_TENANT_UUID =
+      UUID.fromString("9a4c2e71-5b3d-4f8a-b6c1-0d2e4f6a8b13");
 
   private static final UUID HEADQUARTERS_UUID =
       UUID.fromString(
@@ -76,6 +80,7 @@ class ChangeHeadquartersHandlerTest {
 
     ChangeHeadquartersResult result = handler.handle(
         new ChangeHeadquartersCommand(
+            new TenantId(TENANT_UUID),
             ORGANIZATION_UUID,
             SECONDARY_STORE_UUID
         )
@@ -91,7 +96,7 @@ class ChangeHeadquartersHandlerTest {
         .isEqualTo(CHANGED_AT);
 
     Organization savedOrganization = repository
-        .findById(new OrganizationId(ORGANIZATION_UUID))
+        .findById(new TenantId(TENANT_UUID), new OrganizationId(ORGANIZATION_UUID))
         .orElseThrow();
 
     assertThat(savedOrganization.stores())
@@ -111,6 +116,7 @@ class ChangeHeadquartersHandlerTest {
 
     handler.handle(
         new ChangeHeadquartersCommand(
+            new TenantId(TENANT_UUID),
             ORGANIZATION_UUID,
             SECONDARY_STORE_UUID
         )
@@ -143,19 +149,61 @@ class ChangeHeadquartersHandlerTest {
 
   @Test
   void shouldRejectUnknownOrganization() {
-    UUID unknownOrganizationId = UUID.fromString(
-        "1b3d5f7a-9c2e-4d6f-8a0b-2c4e6a8d0f13"
-    );
-
-    assertThatThrownBy(() -> handler.handle(
+    assertOrganizationNotFound(() -> handler.handle(
         new ChangeHeadquartersCommand(
-            unknownOrganizationId,
+            new TenantId(TENANT_UUID),
+            ORGANIZATION_UUID,
             SECONDARY_STORE_UUID
         )
-    ))
-        .isInstanceOf(OrganizationNotFoundException.class);
+    ));
+  }
 
-    assertThat(publisher.publishedEvents()).isEmpty();
+  @Test
+  void shouldNotChangeHeadquartersOfOrganizationOwnedByAnotherTenant() {
+    // The store id is real: it belongs to the victim's organization.
+    Organization organization = activeOrganizationWithSecondaryStore();
+    repository.add(organization);
+
+    assertOrganizationNotFound(() -> handler.handle(
+        new ChangeHeadquartersCommand(
+            new TenantId(OTHER_TENANT_UUID),
+            ORGANIZATION_UUID,
+            SECONDARY_STORE_UUID
+        )
+    ));
+
+    assertHeadquartersUnchanged();
+    assertThat(organization.domainEvents()).isEmpty();
+  }
+
+  @Test
+  void shouldReportNotFoundRatherThanRuleViolationForAnotherTenant() {
+    // A PENDING_ACTIVATION organization cannot change its headquarters,
+    // but another tenant must not learn the organization's state.
+    Organization organization = Organization.register(
+        new OrganizationId(ORGANIZATION_UUID),
+        new TenantId(TENANT_UUID),
+        new OrganizationName("Quincaillerie Thiès"),
+        new LegalName("QUINCAILLERIE THIÈS SARL"),
+        CurrencyCode.xof(),
+        new StoreId(HEADQUARTERS_UUID),
+        new StoreCode("THIES-01"),
+        new StoreName("Magasin principal"),
+        UUID.randomUUID(),
+        CREATED_AT
+    );
+    organization.clearDomainEvents();
+    repository.add(organization);
+
+    assertOrganizationNotFound(() -> handler.handle(
+        new ChangeHeadquartersCommand(
+            new TenantId(OTHER_TENANT_UUID),
+            ORGANIZATION_UUID,
+            SECONDARY_STORE_UUID
+        )
+    ));
+
+    assertHeadquartersUnchanged();
   }
 
   @Test
@@ -168,6 +216,7 @@ class ChangeHeadquartersHandlerTest {
 
     assertThatThrownBy(() -> handler.handle(
         new ChangeHeadquartersCommand(
+            new TenantId(TENANT_UUID),
             ORGANIZATION_UUID,
             unknownStoreId
         )
@@ -204,6 +253,7 @@ class ChangeHeadquartersHandlerTest {
 
     assertThatThrownBy(() -> handler.handle(
         new ChangeHeadquartersCommand(
+            new TenantId(TENANT_UUID),
             ORGANIZATION_UUID,
             SECONDARY_STORE_UUID
         )
@@ -229,6 +279,7 @@ class ChangeHeadquartersHandlerTest {
 
     assertThatThrownBy(() -> handler.handle(
         new ChangeHeadquartersCommand(
+            new TenantId(TENANT_UUID),
             ORGANIZATION_UUID,
             HEADQUARTERS_UUID
         )
@@ -246,10 +297,36 @@ class ChangeHeadquartersHandlerTest {
     assertThat(publisher.publishedEvents()).isEmpty();
   }
 
+
+  /**
+   * Another tenant's organization must be reported exactly like a missing
+   * one: same exception, code and message, and no side effect.
+   */
+  private void assertOrganizationNotFound(ThrowingCallable call) {
+    assertThatThrownBy(call)
+        .isInstanceOfSatisfying(
+            OrganizationNotFoundException.class,
+            exception -> {
+              assertThat(exception.code())
+                  .isEqualTo("ORGANIZATION_NOT_FOUND");
+              assertThat(exception.organizationId())
+                  .isEqualTo(ORGANIZATION_UUID);
+              assertThat(exception.getMessage())
+                  .isEqualTo(
+                      new OrganizationNotFoundException(ORGANIZATION_UUID)
+                          .getMessage()
+                  );
+            }
+        );
+
+    assertThat(repository.saveCount()).isZero();
+    assertThat(publisher.publishedEvents()).isEmpty();
+  }
+
   private void assertHeadquartersUnchanged() {
     assertThat(
         repository
-            .findById(new OrganizationId(ORGANIZATION_UUID))
+            .findById(new TenantId(TENANT_UUID), new OrganizationId(ORGANIZATION_UUID))
             .orElseThrow()
             .stores()
     )

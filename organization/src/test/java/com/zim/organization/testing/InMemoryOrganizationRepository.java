@@ -10,76 +10,78 @@ import com.zim.shared.domain.TenantId;
 import java.util.*;
 
 public final class InMemoryOrganizationRepository
-        implements OrganizationRepository {
+    implements OrganizationRepository {
 
-    private final Map<OrganizationId, Organization> organizations =
-            new HashMap<>();
+  private final Map<OrganizationId, Organization> organizations =
+      new HashMap<>();
 
-    @Override
-    public void save(Organization organization) {
-        Objects.requireNonNull(
-                organization,
-                "Organization cannot be null"
+  private int saveCount;
+
+  @Override
+  public void save(Organization organization) {
+    Objects.requireNonNull(
+        organization,
+        "Organization cannot be null"
+    );
+
+    saveCount++;
+
+    organizations.put(
+        organization.id(),
+        organization
+    );
+  }
+
+  /**
+   * Seeds an organization without counting it as a save.
+   */
+  public void add(Organization organization) {
+    organizations.put(organization.id(), organization);
+  }
+
+  /**
+   * Number of {@link #save(Organization)} calls; seeding via
+   * {@link #add(Organization)} is not counted.
+   */
+  public int saveCount() {
+    return saveCount;
+  }
+
+  @Override
+  public Optional<Organization> findById(
+      TenantId tenantId,
+      OrganizationId organizationId
+  ) {
+    Objects.requireNonNull(tenantId, "Tenant id cannot be null");
+    Objects.requireNonNull(
+        organizationId,
+        "Organization id cannot be null"
+    );
+
+    return Optional.ofNullable(organizations.get(organizationId))
+        .filter(organization ->
+            organization.tenantId().equals(tenantId)
         );
+  }
 
-        organizations.put(
-                organization.id(),
-                organization
-        );
-    }
+  @Override
+  public boolean existsByLegalName(
+      String normalizedLegalName
+  ) {
+    Objects.requireNonNull(
+        normalizedLegalName,
+        "Normalized legal name cannot be null"
+    );
 
-    public void add(Organization organization) {
-        organizations.put(organization.id(), organization);
-    }
+    String normalized = normalizedLegalName
+        .trim()
+        .replaceAll("\\s+", " ")
+        .toUpperCase(Locale.ROOT);
 
-    @Override
-    public Optional<Organization> findById(
-            OrganizationId organizationId
-    ) {
-        return Optional.ofNullable(
-                organizations.get(organizationId)
-        );
-    }
-
-    @Override
-    public Optional<Organization> findByTenantId(
-            TenantId tenantId
-    ) {
-        return organizations.values()
-                .stream()
-                .filter(organization ->
-                        organization.tenantId().equals(tenantId)
-                )
-                .findFirst();
-    }
-
-    @Override
-    public boolean existsByTenantId(TenantId tenantId) {
-        return organizations.values()
-                .stream()
-                .anyMatch(organization ->
-                        organization.tenantId().equals(tenantId)
-                );
-    }
-
-    @Override
-    public boolean existsByLegalName(
-            String normalizedLegalName
-    ) {
-        Objects.requireNonNull(
-                normalizedLegalName,
-                "Normalized legal name cannot be null"
-        );
-
-        String normalized = normalizedLegalName
-                .trim()
-                .replaceAll("\\s+", " ")
-                .toUpperCase(Locale.ROOT);
-
-        return organizations.values()
-                .stream()
-                .map(Organization::legalName)
-                .map(LegalName::normalizedValue)
-                .anyMatch(normalized::equals);
-    }
+    return organizations.values()
+        .stream()
+        .map(Organization::legalName)
+        .map(LegalName::normalizedValue)
+        .anyMatch(normalized::equals);
+  }
 }

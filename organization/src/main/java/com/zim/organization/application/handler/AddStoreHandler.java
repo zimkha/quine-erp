@@ -63,7 +63,7 @@ public class AddStoreHandler {
         new OrganizationId(command.organizationId());
 
     Organization organization = organizationRepository
-        .findById(organizationId)
+        .findById(command.tenantId(), organizationId)
         .orElseThrow(
             () -> new OrganizationNotFoundException(
                 command.organizationId()

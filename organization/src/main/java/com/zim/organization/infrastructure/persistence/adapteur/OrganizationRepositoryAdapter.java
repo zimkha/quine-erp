@@ -78,7 +78,10 @@ public final class OrganizationRepositoryAdapter
 
   private void update(Organization organization) {
     OrganizationEntity entity = repository
-        .findWithStoresById(organization.id().value())
+        .findWithStoresByIdAndTenantId(
+            organization.id().value(),
+            organization.tenantId().value()
+        )
         .orElseThrow(() -> staleState(organization));
 
     if (!entity.getVersion().equals(organization.version())) {
@@ -141,33 +144,18 @@ public final class OrganizationRepositoryAdapter
 
   @Override
   public Optional<Organization> findById(
+      TenantId tenantId,
       OrganizationId organizationId
   ) {
+    Objects.requireNonNull(tenantId);
     Objects.requireNonNull(organizationId);
 
     return repository
-        .findWithStoresById(organizationId.value())
+        .findWithStoresByIdAndTenantId(
+            organizationId.value(),
+            tenantId.value()
+        )
         .map(mapper::toDomain);
-  }
-
-  @Override
-  public Optional<Organization> findByTenantId(
-      TenantId tenantId
-  ) {
-    Objects.requireNonNull(tenantId);
-
-    return repository
-        .findByTenantId(tenantId.value())
-        .map(mapper::toDomain);
-  }
-
-  @Override
-  public boolean existsByTenantId(TenantId tenantId) {
-    Objects.requireNonNull(tenantId);
-
-    return repository.existsByTenantId(
-        tenantId.value()
-    );
   }
 
   @Override

@@ -93,6 +93,7 @@ class RegisterOrganizationHandlerTest {
                 .isEqualTo(FIXED_TIME);
 
         assertThat(repository.findById(
+                new TenantId(TENANT_UUID),
                 new OrganizationId(ORGANIZATION_UUID)
         )).isPresent();
     }

@@ -12,6 +12,7 @@ import com.zim.shared.domain.TenantId;
 import com.zim.organization.testing.InMemoryDomainEventPublisher;
 import com.zim.organization.testing.InMemoryOrganizationRepository;
 import com.zim.shared.domain.BusinessRuleViolationException;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -32,6 +33,9 @@ class AddStoreHandlerTest {
             UUID.fromString(
                     "2d3a7d37-ef2c-4794-b248-b08acf42eb38"
             );
+
+  private static final UUID OTHER_TENANT_UUID =
+      UUID.fromString("9a4c2e71-5b3d-4f8a-b6c1-0d2e4f6a8b13");
 
     private static final UUID HEADQUARTERS_UUID =
             UUID.fromString(
@@ -79,6 +83,7 @@ class AddStoreHandlerTest {
 
         AddStoreResult result = handler.handle(
                 new AddStoreCommand(
+                        new TenantId(TENANT_UUID),
                         ORGANIZATION_UUID,
                         "DAKAR-01",
                         "Magasin Dakar"
@@ -102,7 +107,7 @@ class AddStoreHandlerTest {
         assertThat(result.addedAt()).isEqualTo(ADDED_AT);
 
         Organization savedOrganization = repository
-                .findById(new OrganizationId(ORGANIZATION_UUID))
+                .findById(new TenantId(TENANT_UUID), new OrganizationId(ORGANIZATION_UUID))
                 .orElseThrow();
 
         assertThat(savedOrganization.stores())
@@ -122,6 +127,7 @@ class AddStoreHandlerTest {
 
         handler.handle(
                 new AddStoreCommand(
+                        new TenantId(TENANT_UUID),
                         ORGANIZATION_UUID,
                         "DAKAR-01",
                         "Magasin Dakar"
@@ -191,6 +197,7 @@ class AddStoreHandlerTest {
 
         assertThatThrownBy(() -> handler.handle(
                 new AddStoreCommand(
+                        new TenantId(TENANT_UUID),
                         ORGANIZATION_UUID,
                         "DAKAR-01",
                         "Magasin Dakar"
@@ -213,25 +220,91 @@ class AddStoreHandlerTest {
         assertThat(organization.stores()).hasSize(1);
     }
 
-    @Test
-    void shouldRejectUnknownOrganization() {
-        UUID unknownId = UUID.fromString(
-                "a603d0df-3e99-47a8-9e0d-666ed65ad07a"
+  @Test
+  void shouldRejectUnknownOrganization() {
+    assertOrganizationNotFound(() -> handler.handle(
+        new AddStoreCommand(
+            new TenantId(TENANT_UUID),
+            ORGANIZATION_UUID,
+            "DAKAR-01",
+            "Magasin Dakar"
+        )
+    ));
+  }
+
+  @Test
+  void shouldNotAddStoreToOrganizationOwnedByAnotherTenant() {
+    Organization organization = activeOrganization();
+    repository.add(organization);
+
+    assertOrganizationNotFound(() -> handler.handle(
+        new AddStoreCommand(
+            new TenantId(OTHER_TENANT_UUID),
+            ORGANIZATION_UUID,
+            "DAKAR-01",
+            "Magasin Dakar"
+        )
+    ));
+
+    assertThat(organization.status())
+        .isEqualTo(OrganizationStatus.ACTIVE);
+    assertThat(organization.stores())
+        .singleElement()
+        .satisfies(store -> assertThat(store.id().value())
+            .isEqualTo(HEADQUARTERS_UUID));
+    assertThat(organization.domainEvents()).isEmpty();
+  }
+
+  @Test
+  void shouldReportNotFoundRatherThanRuleViolationForAnotherTenant() {
+    // Adding a store to a CLOSED organization breaks a rule for its owner,
+    // but another tenant must not learn the organization's state.
+    Organization organization = activeOrganization();
+    organization.close(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-02T10:00:00Z")
+    );
+    organization.clearDomainEvents();
+    repository.add(organization);
+
+    assertOrganizationNotFound(() -> handler.handle(
+        new AddStoreCommand(
+            new TenantId(OTHER_TENANT_UUID),
+            ORGANIZATION_UUID,
+            "DAKAR-01",
+            "Magasin Dakar"
+        )
+    ));
+
+    assertThat(organization.status())
+        .isEqualTo(OrganizationStatus.CLOSED);
+    assertThat(organization.stores()).hasSize(1);
+  }
+
+  /**
+   * Another tenant's organization must be reported exactly like a missing
+   * one: same exception, code and message, and no side effect.
+   */
+  private void assertOrganizationNotFound(ThrowingCallable call) {
+    assertThatThrownBy(call)
+        .isInstanceOfSatisfying(
+            OrganizationNotFoundException.class,
+            exception -> {
+              assertThat(exception.code())
+                  .isEqualTo("ORGANIZATION_NOT_FOUND");
+              assertThat(exception.organizationId())
+                  .isEqualTo(ORGANIZATION_UUID);
+              assertThat(exception.getMessage())
+                  .isEqualTo(
+                      new OrganizationNotFoundException(ORGANIZATION_UUID)
+                          .getMessage()
+                  );
+            }
         );
 
-        assertThatThrownBy(() -> handler.handle(
-                new AddStoreCommand(
-                        unknownId,
-                        "DAKAR-01",
-                        "Magasin Dakar"
-                )
-        ))
-                .isInstanceOf(
-                        OrganizationNotFoundException.class
-                );
-
-        assertThat(publisher.publishedEvents()).isEmpty();
-    }
+    assertThat(repository.saveCount()).isZero();
+    assertThat(publisher.publishedEvents()).isEmpty();
+  }
 
     private static Organization activeOrganization() {
         Organization organization = pendingOrganization();

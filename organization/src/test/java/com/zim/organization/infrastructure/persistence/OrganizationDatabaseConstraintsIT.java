@@ -276,6 +276,76 @@ public class OrganizationDatabaseConstraintsIT
         );
   }
   @Test
+  void shouldRejectSecondOrganizationForSameTenant() {
+    // Given
+    Organization organization = Organization.register(
+        new OrganizationId(ORGANIZATION_UUID),
+        new TenantId(TENANT_UUID),
+        new OrganizationName("Quincaillerie Thiès"),
+        new LegalName("Quincaillerie Thiès SARL"),
+        CurrencyCode.xof(),
+        new StoreId(HEADQUARTERS_UUID),
+        new StoreCode("THIES-01"),
+        new StoreName("Magasin principal"),
+        UUID.randomUUID(),
+        CREATED_AT
+    );
+
+    organization.clearDomainEvents();
+
+    repositoryAdapter.save(organization);
+
+    entityManager.flush();
+    entityManager.clear();
+
+    // When / Then: same tenant, different id and legal name, so only the
+    // tenant uniqueness constraint can reject the row.
+    assertThatThrownBy(() ->
+        entityManager.createNativeQuery("""
+          INSERT INTO organization.organizations (
+            id,
+            tenant_id,
+            name,
+            legal_name,
+            normalized_legal_name,
+            currency,
+            status,
+            created_at
+          )
+          VALUES (
+            CAST(:id AS uuid),
+            CAST(:tenantId AS uuid),
+            :name,
+            :legalName,
+            :normalizedLegalName,
+            :currency,
+            :status,
+            :createdAt
+          )
+          """)
+            .setParameter("id", UUID.randomUUID())
+            .setParameter("tenantId", TENANT_UUID)
+            .setParameter("name", "Quincaillerie Dakar")
+            .setParameter("legalName", "Quincaillerie Dakar SARL")
+            .setParameter(
+                "normalizedLegalName",
+                "QUINCAILLERIE DAKAR SARL"
+            )
+            .setParameter("currency", "XOF")
+            .setParameter(
+                "status",
+                OrganizationStatus.PENDING_ACTIVATION.name()
+            )
+            .setParameter(
+                "createdAt",
+                Instant.parse("2026-08-03T10:00:00Z")
+            )
+            .executeUpdate()
+    )
+        .isInstanceOf(Exception.class)
+        .hasMessageContaining("uk_organizations_tenant_id");
+  }
+  @Test
   void shouldRejectInactiveHeadquarters() {
     // Given
     Organization organization = Organization.register(

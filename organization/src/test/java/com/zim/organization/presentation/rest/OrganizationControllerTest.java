@@ -1,15 +1,27 @@
 package com.zim.organization.presentation.rest;
 
+import com.zim.organization.application.command.ActivateOrganizationCommand;
 import com.zim.organization.application.command.RegisterOrganizationCommand;
 import com.zim.organization.application.exception.OrganizationAlreadyExistsException;
 import com.zim.organization.application.exception.OrganizationNotFoundException;
+import com.zim.organization.application.handler.ActivateOrganizationHandler;
 import com.zim.organization.application.handler.RegisterOrganizationHandler;
 import com.zim.organization.application.result.RegisterOrganizationResult;
+import com.zim.organization.domain.model.Organization;
 import com.zim.organization.domain.model.OrganizationStatus;
 import com.zim.organization.domain.rule.OrganizationMustBeActiveToAddStoreRule;
 import com.zim.organization.domain.valueobject.CurrencyCode;
+import com.zim.organization.domain.valueobject.LegalName;
+import com.zim.organization.domain.valueobject.OrganizationId;
+import com.zim.organization.domain.valueobject.OrganizationName;
+import com.zim.organization.domain.valueobject.StoreCode;
+import com.zim.organization.domain.valueobject.StoreId;
+import com.zim.organization.domain.valueobject.StoreName;
 import com.zim.organization.presentation.rest.exception.ApiExceptionHandler;
+import com.zim.organization.testing.InMemoryDomainEventPublisher;
+import com.zim.organization.testing.InMemoryOrganizationRepository;
 import com.zim.shared.domain.BusinessRuleViolationException;
+import com.zim.shared.domain.TenantId;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -30,8 +42,11 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -57,6 +72,11 @@ class OrganizationControllerTest {
   private static final UUID HEADQUARTERS_ID =
       UUID.fromString(
           "4ee0d038-4617-435c-b7c8-48697d4cf909"
+      );
+
+  private static final UUID OTHER_TENANT_ID =
+      UUID.fromString(
+          "9a4c2e71-5b3d-4f8a-b6c1-0d2e4f6a8b13"
       );
 
   private static final Instant CREATED_AT =
@@ -263,6 +283,81 @@ class OrganizationControllerTest {
     register(validRequestWith("legalName", "Quincaillerie Thiès SARL"))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("ORGANIZATION_NOT_FOUND"));
+  }
+
+  /**
+   * Tenant scoping: another tenant's organization must be indistinguishable
+   * from a missing one over HTTP. Both exceptions come from the real
+   * handler, and the endpoint only serves to drive ApiExceptionHandler.
+   */
+  @Test
+  void shouldMapWrongTenantAndMissingOrganizationToIdenticalNotFound()
+      throws Exception {
+    OrganizationNotFoundException wrongTenant =
+        activationFailure(true, OTHER_TENANT_ID);
+    OrganizationNotFoundException missing =
+        activationFailure(false, TENANT_ID);
+    assertThat(wrongTenant).isNotNull();
+    assertThat(missing).isNotNull();
+
+    doThrow(wrongTenant).when(registerOrganizationHandler).handle(any());
+    String wrongTenantBody = register(validRequestWith("legalName", "Quincaillerie Thiès SARL"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("ORGANIZATION_NOT_FOUND"))
+        .andExpect(jsonPath("$.timestamp").exists())
+        .andReturn().getResponse().getContentAsString();
+
+    doThrow(missing).when(registerOrganizationHandler).handle(any());
+    String missingBody = register(validRequestWith("legalName", "Quincaillerie Thiès SARL"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("ORGANIZATION_NOT_FOUND"))
+        .andExpect(jsonPath("$.timestamp").exists())
+        .andReturn().getResponse().getContentAsString();
+
+    assertThat(withoutTimestamp(wrongTenantBody))
+        .isEqualTo(withoutTimestamp(missingBody));
+  }
+
+  private static OrganizationNotFoundException activationFailure(
+      boolean organizationExists,
+      UUID callerTenantId
+  ) {
+    InMemoryOrganizationRepository repository =
+        new InMemoryOrganizationRepository();
+
+    if (organizationExists) {
+      repository.add(Organization.register(
+          new OrganizationId(ORGANIZATION_ID),
+          new TenantId(TENANT_ID),
+          new OrganizationName("Quincaillerie Thiès"),
+          new LegalName("Quincaillerie Thiès SARL"),
+          CurrencyCode.xof(),
+          new StoreId(HEADQUARTERS_ID),
+          new StoreCode("THIES-01"),
+          new StoreName("Magasin principal"),
+          UUID.randomUUID(),
+          CREATED_AT
+      ));
+    }
+
+    ActivateOrganizationHandler handler = new ActivateOrganizationHandler(
+        repository,
+        UUID::randomUUID,
+        () -> CREATED_AT,
+        new InMemoryDomainEventPublisher()
+    );
+
+    return catchThrowableOfType(
+        OrganizationNotFoundException.class,
+        () -> handler.handle(new ActivateOrganizationCommand(
+            new TenantId(callerTenantId),
+            ORGANIZATION_ID
+        ))
+    );
+  }
+
+  private static String withoutTimestamp(String body) {
+    return body.replaceAll("\"timestamp\"\\s*:\\s*\"[^\"]*\"", "");
   }
 
   @Test

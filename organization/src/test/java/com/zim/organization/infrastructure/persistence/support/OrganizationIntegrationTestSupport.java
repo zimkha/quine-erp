@@ -125,6 +125,7 @@ public abstract class OrganizationIntegrationTestSupport
   protected Organization reloadOrganization() {
     return repositoryAdapter
         .findById(
+            new TenantId(TENANT_UUID),
             new OrganizationId(
                 ORGANIZATION_UUID
             )

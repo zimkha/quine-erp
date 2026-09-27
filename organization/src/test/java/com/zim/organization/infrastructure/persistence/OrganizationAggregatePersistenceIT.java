@@ -109,6 +109,7 @@ public class OrganizationAggregatePersistenceIT
 
     Organization reloaded = repositoryAdapter
         .findById(
+            new TenantId(TENANT_UUID),
             new OrganizationId(ORGANIZATION_UUID)
         )
         .orElseThrow();
@@ -189,6 +190,7 @@ public class OrganizationAggregatePersistenceIT
 
     Organization persistedOrganization =
         repositoryAdapter.findById(
+            new TenantId(TENANT_UUID),
             new OrganizationId(ORGANIZATION_UUID)
         ).orElseThrow();
 
@@ -228,6 +230,7 @@ public class OrganizationAggregatePersistenceIT
     // Then
     Organization reloaded =
         repositoryAdapter.findById(
+            new TenantId(TENANT_UUID),
             new OrganizationId(ORGANIZATION_UUID)
         ).orElseThrow();
 
@@ -306,6 +309,7 @@ public class OrganizationAggregatePersistenceIT
 
     Organization persisted =
         repositoryAdapter.findById(
+            new TenantId(TENANT_UUID),
             new OrganizationId(ORGANIZATION_UUID)
         ).orElseThrow();
 
@@ -326,6 +330,7 @@ public class OrganizationAggregatePersistenceIT
     // Then
     Organization reloaded =
         repositoryAdapter.findById(
+            new TenantId(TENANT_UUID),
             new OrganizationId(ORGANIZATION_UUID)
         ).orElseThrow();
 

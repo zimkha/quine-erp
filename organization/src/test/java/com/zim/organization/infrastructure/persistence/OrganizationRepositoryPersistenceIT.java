@@ -86,7 +86,7 @@ class OrganizationRepositoryPersistenceIT
     }
 
     @Test
-    void shouldFindOrganizationByTenantId() {
+    void shouldFindOrganizationOwnedByTenant() {
         // Given
         Organization organization = pendingOrganization();
 
@@ -96,8 +96,9 @@ class OrganizationRepositoryPersistenceIT
 
         // When
         Optional<Organization> result =
-                repositoryAdapter.findByTenantId(
-                        new TenantId(TENANT_UUID)
+                repositoryAdapter.findById(
+                        new TenantId(TENANT_UUID),
+                        new OrganizationId(ORGANIZATION_UUID)
                 );
 
         // Then
@@ -152,15 +153,20 @@ class OrganizationRepositoryPersistenceIT
     }
 
     @Test
-    void shouldReturnEmptyWhenTenantIdDoesNotExist() {
+    void shouldReturnEmptyWhenTenantDoesNotOwnOrganization() {
         // Given
+        repositoryAdapter.save(pendingOrganization());
+
+        flushAndClear();
+
         TenantId unknownTenantId =
                 new TenantId(UUID.randomUUID());
 
         // When
         Optional<Organization> result =
-                repositoryAdapter.findByTenantId(
-                        unknownTenantId
+                repositoryAdapter.findById(
+                        unknownTenantId,
+                        new OrganizationId(ORGANIZATION_UUID)
                 );
 
         // Then
@@ -217,6 +223,7 @@ class OrganizationRepositoryPersistenceIT
         // When
         Optional<Organization> result =
                 repositoryAdapter.findById(
+                        new TenantId(TENANT_UUID),
                         new OrganizationId(
                                 ORGANIZATION_UUID
                         )
@@ -260,45 +267,11 @@ class OrganizationRepositoryPersistenceIT
         // When
         Optional<Organization> result =
                 repositoryAdapter.findById(
+                        new TenantId(TENANT_UUID),
                         unknownOrganizationId
                 );
 
         // Then
         assertThat(result).isEmpty();
-    }
-
-    @Test
-    void shouldDetectExistingTenantId() {
-        // Given
-        Organization organization = pendingOrganization();
-
-        repositoryAdapter.save(organization);
-
-        flushAndClear();
-
-        // When
-        boolean exists =
-                repositoryAdapter.existsByTenantId(
-                        new TenantId(TENANT_UUID)
-                );
-
-        // Then
-        assertThat(exists).isTrue();
-    }
-
-    @Test
-    void shouldReturnFalseWhenTenantIdDoesNotExist() {
-        // Given
-        TenantId unknownTenantId =
-                new TenantId(UUID.randomUUID());
-
-        // When
-        boolean exists =
-                repositoryAdapter.existsByTenantId(
-                        unknownTenantId
-                );
-
-        // Then
-        assertThat(exists).isFalse();
     }
 }

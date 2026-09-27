@@ -12,6 +12,7 @@ import com.zim.shared.domain.TenantId;
 import com.zim.organization.testing.InMemoryDomainEventPublisher;
 import com.zim.organization.testing.InMemoryOrganizationRepository;
 import com.zim.shared.domain.BusinessRuleViolationException;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -28,6 +29,9 @@ class CloseOrganizationHandlerTest {
 
     private static final UUID TENANT_UUID =
             UUID.fromString("2d3a7d37-ef2c-4794-b248-b08acf42eb38");
+
+  private static final UUID OTHER_TENANT_UUID =
+      UUID.fromString("9a4c2e71-5b3d-4f8a-b6c1-0d2e4f6a8b13");
 
     private static final UUID HEADQUARTERS_UUID =
             UUID.fromString("4ee0d038-4617-435c-b7c8-48697d4cf909");
@@ -71,7 +75,7 @@ class CloseOrganizationHandlerTest {
         repository.add(organization);
 
         CloseOrganizationResult result = handler.handle(
-                new CloseOrganizationCommand(ORGANIZATION_UUID)
+                new CloseOrganizationCommand(new TenantId(TENANT_UUID), ORGANIZATION_UUID)
         );
 
         assertThat(result.organizationId())
@@ -87,7 +91,7 @@ class CloseOrganizationHandlerTest {
                 .isEqualTo(CLOSED_AT);
 
         Organization savedOrganization = repository
-                .findById(new OrganizationId(ORGANIZATION_UUID))
+                .findById(new TenantId(TENANT_UUID), new OrganizationId(ORGANIZATION_UUID))
                 .orElseThrow();
 
         assertThat(savedOrganization.status())
@@ -104,7 +108,7 @@ class CloseOrganizationHandlerTest {
         repository.add(organization);
 
         CloseOrganizationResult result = handler.handle(
-                new CloseOrganizationCommand(ORGANIZATION_UUID)
+                new CloseOrganizationCommand(new TenantId(TENANT_UUID), ORGANIZATION_UUID)
         );
 
         assertThat(result.organizationId())
@@ -117,7 +121,7 @@ class CloseOrganizationHandlerTest {
                 .isEqualTo(CLOSED_AT);
 
         Organization savedOrganization = repository
-                .findById(new OrganizationId(ORGANIZATION_UUID))
+                .findById(new TenantId(TENANT_UUID), new OrganizationId(ORGANIZATION_UUID))
                 .orElseThrow();
 
         assertThat(savedOrganization.status())
@@ -129,7 +133,7 @@ class CloseOrganizationHandlerTest {
         repository.add(activeOrganization());
 
         handler.handle(
-                new CloseOrganizationCommand(ORGANIZATION_UUID)
+                new CloseOrganizationCommand(new TenantId(TENANT_UUID), ORGANIZATION_UUID)
         );
 
         assertThat(publisher.publishedEvents())
@@ -163,7 +167,7 @@ class CloseOrganizationHandlerTest {
                 UUID.fromString("ee20db38-4666-40d2-a209-690f280ef499");
 
         assertThatThrownBy(() -> handler.handle(
-                new CloseOrganizationCommand(unknownOrganizationId)
+                new CloseOrganizationCommand(new TenantId(TENANT_UUID), unknownOrganizationId)
         ))
                 .isInstanceOf(OrganizationNotFoundException.class)
                 .satisfies(throwable -> {
@@ -189,7 +193,7 @@ class CloseOrganizationHandlerTest {
         repository.add(organization);
 
         assertThatThrownBy(() -> handler.handle(
-                new CloseOrganizationCommand(ORGANIZATION_UUID)
+                new CloseOrganizationCommand(new TenantId(TENANT_UUID), ORGANIZATION_UUID)
         ))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .satisfies(throwable -> {
@@ -226,7 +230,7 @@ class CloseOrganizationHandlerTest {
         repository.add(organization);
 
         assertThatThrownBy(() -> handler.handle(
-                new CloseOrganizationCommand(ORGANIZATION_UUID)
+                new CloseOrganizationCommand(new TenantId(TENANT_UUID), ORGANIZATION_UUID)
         ))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .satisfies(throwable -> {
@@ -257,11 +261,11 @@ class CloseOrganizationHandlerTest {
         repository.add(organization);
 
         handler.handle(
-                new CloseOrganizationCommand(ORGANIZATION_UUID)
+                new CloseOrganizationCommand(new TenantId(TENANT_UUID), ORGANIZATION_UUID)
         );
 
         Organization savedOrganization = repository
-                .findById(new OrganizationId(ORGANIZATION_UUID))
+                .findById(new TenantId(TENANT_UUID), new OrganizationId(ORGANIZATION_UUID))
                 .orElseThrow();
 
         assertThat(savedOrganization.domainEvents())
@@ -270,6 +274,71 @@ class CloseOrganizationHandlerTest {
         assertThat(publisher.publishedEvents())
                 .hasSize(1);
     }
+
+  @Test
+  void shouldNotCloseOrganizationOwnedByAnotherTenant() {
+    Organization organization = activeOrganization();
+    repository.add(organization);
+
+    assertOrganizationNotFound(() -> handler.handle(
+        new CloseOrganizationCommand(
+            new TenantId(OTHER_TENANT_UUID),
+            ORGANIZATION_UUID
+        )
+    ));
+
+    assertThat(organization.status())
+        .isEqualTo(OrganizationStatus.ACTIVE);
+    assertThat(organization.domainEvents()).isEmpty();
+  }
+
+  @Test
+  void shouldReportNotFoundRatherThanRuleViolationForAnotherTenant() {
+    // Closing a CLOSED organization breaks a rule for its owner, but
+    // another tenant must not learn the organization's state.
+    Organization organization = activeOrganization();
+    organization.close(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-03T09:00:00Z")
+    );
+    organization.clearDomainEvents();
+    repository.add(organization);
+
+    assertOrganizationNotFound(() -> handler.handle(
+        new CloseOrganizationCommand(
+            new TenantId(OTHER_TENANT_UUID),
+            ORGANIZATION_UUID
+        )
+    ));
+
+    assertThat(organization.status())
+        .isEqualTo(OrganizationStatus.CLOSED);
+  }
+
+  /**
+   * Another tenant's organization must be reported exactly like a missing
+   * one: same exception, code and message, and no side effect.
+   */
+  private void assertOrganizationNotFound(ThrowingCallable call) {
+    assertThatThrownBy(call)
+        .isInstanceOfSatisfying(
+            OrganizationNotFoundException.class,
+            exception -> {
+              assertThat(exception.code())
+                  .isEqualTo("ORGANIZATION_NOT_FOUND");
+              assertThat(exception.organizationId())
+                  .isEqualTo(ORGANIZATION_UUID);
+              assertThat(exception.getMessage())
+                  .isEqualTo(
+                      new OrganizationNotFoundException(ORGANIZATION_UUID)
+                          .getMessage()
+                  );
+            }
+        );
+
+    assertThat(repository.saveCount()).isZero();
+    assertThat(publisher.publishedEvents()).isEmpty();
+  }
 
     private static Organization suspendedOrganization() {
         Organization organization = activeOrganization();

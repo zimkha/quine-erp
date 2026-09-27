@@ -11,6 +11,7 @@ import com.zim.shared.domain.TenantId;
 import com.zim.organization.testing.InMemoryDomainEventPublisher;
 import com.zim.organization.testing.InMemoryOrganizationRepository;
 import com.zim.shared.domain.BusinessRuleViolationException;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -31,6 +32,9 @@ class ActivateOrganizationHandlerTest {
             UUID.fromString(
                     "2d3a7d37-ef2c-4794-b248-b08acf42eb38"
             );
+
+  private static final UUID OTHER_TENANT_UUID =
+      UUID.fromString("9a4c2e71-5b3d-4f8a-b6c1-0d2e4f6a8b13");
 
     private static final UUID STORE_UUID =
             UUID.fromString(
@@ -77,7 +81,7 @@ class ActivateOrganizationHandlerTest {
         repository.add(organization);
 
         ActivateOrganizationResult result = handler.handle(
-                new ActivateOrganizationCommand(ORGANIZATION_UUID)
+                new ActivateOrganizationCommand(new TenantId(TENANT_UUID), ORGANIZATION_UUID)
         );
 
         assertThat(result.organizationId())
@@ -93,7 +97,7 @@ class ActivateOrganizationHandlerTest {
                 .isEqualTo(ACTIVATED_AT);
 
         Organization savedOrganization = repository
-                .findById(new OrganizationId(ORGANIZATION_UUID))
+                .findById(new TenantId(TENANT_UUID), new OrganizationId(ORGANIZATION_UUID))
                 .orElseThrow();
 
         assertThat(savedOrganization.status())
@@ -108,7 +112,7 @@ class ActivateOrganizationHandlerTest {
         repository.add(organization);
 
         handler.handle(
-                new ActivateOrganizationCommand(ORGANIZATION_UUID)
+                new ActivateOrganizationCommand(new TenantId(TENANT_UUID), ORGANIZATION_UUID)
         );
 
         assertThat(publisher.publishedEvents())
@@ -140,11 +144,11 @@ class ActivateOrganizationHandlerTest {
         repository.add(organization);
 
         handler.handle(
-                new ActivateOrganizationCommand(ORGANIZATION_UUID)
+                new ActivateOrganizationCommand(new TenantId(TENANT_UUID), ORGANIZATION_UUID)
         );
 
         Organization savedOrganization = repository
-                .findById(new OrganizationId(ORGANIZATION_UUID))
+                .findById(new TenantId(TENANT_UUID), new OrganizationId(ORGANIZATION_UUID))
                 .orElseThrow();
 
         assertThat(savedOrganization.domainEvents())
@@ -161,6 +165,7 @@ class ActivateOrganizationHandlerTest {
         assertThatThrownBy(
                 () -> handler.handle(
                         new ActivateOrganizationCommand(
+                                new TenantId(TENANT_UUID),
                                 unknownOrganizationId
                         )
                 )
@@ -198,6 +203,7 @@ class ActivateOrganizationHandlerTest {
         assertThatThrownBy(
                 () -> handler.handle(
                         new ActivateOrganizationCommand(
+                                new TenantId(TENANT_UUID),
                                 ORGANIZATION_UUID
                         )
                 )
@@ -222,6 +228,73 @@ class ActivateOrganizationHandlerTest {
 
         assertThat(publisher.publishedEvents()).isEmpty();
     }
+
+  @Test
+  void shouldNotActivateOrganizationOwnedByAnotherTenant() {
+    Organization organization = pendingOrganization();
+    organization.clearDomainEvents();
+    repository.add(organization);
+
+    assertOrganizationNotFound(() -> handler.handle(
+        new ActivateOrganizationCommand(
+            new TenantId(OTHER_TENANT_UUID),
+            ORGANIZATION_UUID
+        )
+    ));
+
+    assertThat(organization.status())
+        .isEqualTo(OrganizationStatus.PENDING_ACTIVATION);
+    assertThat(organization.domainEvents()).isEmpty();
+  }
+
+  @Test
+  void shouldReportNotFoundRatherThanRuleViolationForAnotherTenant() {
+    // Activating an ACTIVE organization breaks a rule for its owner, but
+    // another tenant must not learn the organization's state.
+    Organization organization = pendingOrganization();
+    organization.clearDomainEvents();
+    organization.activate(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-01T12:00:00Z")
+    );
+    organization.clearDomainEvents();
+    repository.add(organization);
+
+    assertOrganizationNotFound(() -> handler.handle(
+        new ActivateOrganizationCommand(
+            new TenantId(OTHER_TENANT_UUID),
+            ORGANIZATION_UUID
+        )
+    ));
+
+    assertThat(organization.status())
+        .isEqualTo(OrganizationStatus.ACTIVE);
+  }
+
+  /**
+   * Another tenant's organization must be reported exactly like a missing
+   * one: same exception, code and message, and no side effect.
+   */
+  private void assertOrganizationNotFound(ThrowingCallable call) {
+    assertThatThrownBy(call)
+        .isInstanceOfSatisfying(
+            OrganizationNotFoundException.class,
+            exception -> {
+              assertThat(exception.code())
+                  .isEqualTo("ORGANIZATION_NOT_FOUND");
+              assertThat(exception.organizationId())
+                  .isEqualTo(ORGANIZATION_UUID);
+              assertThat(exception.getMessage())
+                  .isEqualTo(
+                      new OrganizationNotFoundException(ORGANIZATION_UUID)
+                          .getMessage()
+                  );
+            }
+        );
+
+    assertThat(repository.saveCount()).isZero();
+    assertThat(publisher.publishedEvents()).isEmpty();
+  }
 
     private static Organization pendingOrganization() {
         return Organization.register(
