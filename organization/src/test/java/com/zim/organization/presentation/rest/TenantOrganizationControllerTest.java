@@ -2,13 +2,16 @@ package com.zim.organization.presentation.rest;
 
 import com.zim.organization.application.command.AddStoreCommand;
 import com.zim.organization.application.command.ChangeHeadquartersCommand;
+import com.zim.organization.application.command.CloseOrganizationCommand;
 import com.zim.organization.application.command.DeactivateStoreCommand;
 import com.zim.organization.application.exception.OrganizationNotFoundException;
 import com.zim.organization.application.handler.AddStoreHandler;
 import com.zim.organization.application.handler.ChangeHeadquartersHandler;
+import com.zim.organization.application.handler.CloseOrganizationHandler;
 import com.zim.organization.application.handler.DeactivateStoreHandler;
 import com.zim.organization.application.result.AddStoreResult;
 import com.zim.organization.application.result.ChangeHeadquartersResult;
+import com.zim.organization.application.result.CloseOrganizationResult;
 import com.zim.organization.application.result.DeactivateStoreResult;
 import com.zim.organization.domain.model.Organization;
 import com.zim.organization.domain.model.OrganizationStatus;
@@ -119,6 +122,12 @@ class TenantOrganizationControllerTest {
   private static final UUID UNKNOWN_STORE_ID =
       UUID.fromString("0b7d3e5f-9a1c-4d2e-8f6a-3c5e7a9b1d24");
 
+  private static final String CLOSURE_PATH =
+      "/api/organizations/{id}/closure";
+
+  private static final Instant CLOSED_AT =
+      Instant.parse("2026-08-29T10:00:00Z");
+
   private static final String VALID_BODY = """
       {"storeCode": "thies-02", "storeName": "Magasin 2"}
       """;
@@ -134,6 +143,9 @@ class TenantOrganizationControllerTest {
 
   @MockitoBean
   private DeactivateStoreHandler deactivateStoreHandler;
+
+  @MockitoBean
+  private CloseOrganizationHandler closeOrganizationHandler;
 
   @MockitoBean
   private CurrentTenantProvider currentTenantProvider;
@@ -1317,6 +1329,239 @@ class TenantOrganizationControllerTest {
         .andExpect(jsonPath("$.code").value("CONCURRENT_MODIFICATION"));
   }
 
+  // =========================================================================
+  // POST /api/organizations/{id}/closure (T5d)
+  //
+  // Closing is allowed from ACTIVE and SUSPENDED only. Every fixture is
+  // built through the aggregate's own behaviour (see organization(status)):
+  // SUSPENDED is seeded as register -> activate -> suspend, since no handler
+  // suspends.
+  // =========================================================================
+
+  // --- Success -------------------------------------------------------------
+
+  @Test
+  void shouldCloseActiveOrganization() throws Exception {
+    shouldCloseOrganizationFrom(OrganizationStatus.ACTIVE);
+  }
+
+  @Test
+  void shouldCloseSuspendedOrganization() throws Exception {
+    shouldCloseOrganizationFrom(OrganizationStatus.SUSPENDED);
+  }
+
+  /**
+   * The command carries the provider's tenant and the path id. The
+   * endpoint has no request body: whatever is sent, including a tenantId
+   * set to another tenant or malformed JSON, is ignored, and so is a tenant
+   * header.
+   */
+  @ParameterizedTest
+  @ValueSource(strings = {
+      "",
+      "{\"tenantId\": \"9a4c2e71-5b3d-4f8a-b6c1-0d2e4f6a8b13\"}",
+      "{\"legalName\": \"LEAK-4711\","
+  })
+  void shouldTakeTenantAndIdOnlyFromProviderAndPathWhenClosing(String body)
+      throws Exception {
+    when(closeOrganizationHandler.handle(any())).thenReturn(
+        new CloseOrganizationResult(
+            ORGANIZATION_ID,
+            TENANT_ID,
+            "CLOSED",
+            CLOSED_AT
+        )
+    );
+
+    mockMvc.perform(
+            post(CLOSURE_PATH, ORGANIZATION_ID)
+                .header("X-Tenant-Id", OTHER_TENANT_ID.toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body)
+        )
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.organizationId")
+            .value(ORGANIZATION_ID.toString()))
+        .andExpect(jsonPath("$.status").value("CLOSED"));
+
+    ArgumentCaptor<CloseOrganizationCommand> command =
+        ArgumentCaptor.forClass(CloseOrganizationCommand.class);
+    verify(closeOrganizationHandler).handle(command.capture());
+    assertThat(command.getValue()).isEqualTo(new CloseOrganizationCommand(
+        new TenantId(TENANT_ID),
+        ORGANIZATION_ID
+    ));
+    verify(currentTenantProvider, times(1)).currentTenant();
+  }
+
+  // --- 401 -----------------------------------------------------------------
+
+  @Test
+  void shouldReturnUnauthorizedOnClosureWhenTenantIsNotResolved()
+      throws Exception {
+    when(currentTenantProvider.currentTenant())
+        .thenThrow(new TenantNotResolvedException());
+
+    closeOrganization(ORGANIZATION_ID.toString())
+        .andExpect(status().isUnauthorized())
+        .andExpect(header().string(
+            HttpHeaders.WWW_AUTHENTICATE,
+            "Bearer realm=\"quine-erp\""
+        ))
+        .andExpect(jsonPath("$", aMapWithSize(3)))
+        .andExpect(jsonPath("$.code").value("TENANT_NOT_RESOLVED"));
+
+    verifyNoInteractions(closeOrganizationHandler);
+  }
+
+  // --- 400 -----------------------------------------------------------------
+
+  /** A malformed id names the parameter, never the submitted value. */
+  @Test
+  void shouldReturnBadRequestOnClosureWhenPathIdIsNotUuid() throws Exception {
+    String body = closeOrganization("not-a-uuid-4711")
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$", aMapWithSize(3)))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+        .andExpect(jsonPath("$.message").value("id: must be a valid UUID"))
+        .andExpect(jsonPath("$.timestamp").exists())
+        .andReturn().getResponse().getContentAsString();
+
+    assertThat(body).doesNotContain("not-a-uuid-4711");
+    verifyNoInteractions(closeOrganizationHandler);
+  }
+
+  /** 400 before 401 (Architect decision 5). */
+  @Test
+  void shouldValidateClosurePathBeforeResolvingTenant() throws Exception {
+    when(currentTenantProvider.currentTenant())
+        .thenThrow(new TenantNotResolvedException());
+
+    closeOrganization("not-a-uuid")
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+    verifyNoInteractions(currentTenantProvider);
+    verifyNoInteractions(closeOrganizationHandler);
+  }
+
+  // --- 404 -----------------------------------------------------------------
+
+  @Test
+  void shouldReturnNotFoundOnClosureWhenOrganizationDoesNotExist()
+      throws Exception {
+    delegateToRealCloseOrganizationHandler(
+        new InMemoryOrganizationRepository()
+    );
+
+    closeOrganization(ORGANIZATION_ID.toString())
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$", aMapWithSize(3)))
+        .andExpect(jsonPath("$.code").value("ORGANIZATION_NOT_FOUND"));
+  }
+
+  /**
+   * Tenant B sends A's organization id. Whatever A's status, including
+   * CLOSED, B gets exactly the missing organization's 404, never
+   * ORGANIZATION_ALREADY_CLOSED or ORGANIZATION_CANNOT_BE_CLOSED, and A is
+   * neither changed nor saved. Both responses come from the real handler.
+   */
+  @ParameterizedTest
+  @EnumSource(OrganizationStatus.class)
+  void shouldMapWrongTenantAndMissingOrganizationToIdenticalNotFoundOnClosure(
+      OrganizationStatus status
+  ) throws Exception {
+    when(currentTenantProvider.currentTenant())
+        .thenReturn(new TenantId(OTHER_TENANT_ID));
+
+    Organization owned = organization(status);
+    InMemoryOrganizationRepository ownedByA = repositoryWith(owned);
+
+    delegateToRealCloseOrganizationHandler(ownedByA);
+    String wrongTenantBody = closeOrganization(ORGANIZATION_ID.toString())
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("ORGANIZATION_NOT_FOUND"))
+        .andExpect(jsonPath("$.timestamp").exists())
+        .andReturn().getResponse().getContentAsString();
+
+    delegateToRealCloseOrganizationHandler(
+        new InMemoryOrganizationRepository()
+    );
+    String missingBody = closeOrganization(ORGANIZATION_ID.toString())
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("ORGANIZATION_NOT_FOUND"))
+        .andExpect(jsonPath("$.timestamp").exists())
+        .andReturn().getResponse().getContentAsString();
+
+    assertThat(withoutTimestamp(wrongTenantBody))
+        .isEqualTo(withoutTimestamp(missingBody));
+    assertThat(wrongTenantBody)
+        .doesNotContain("ORGANIZATION_ALREADY_CLOSED")
+        .doesNotContain("ORGANIZATION_CANNOT_BE_CLOSED");
+    assertThat(ownedByA.saveCount()).isZero();
+    assertThat(owned.status()).isEqualTo(status);
+    assertThat(owned.pullDomainEvents()).isEmpty();
+  }
+
+  // --- 409 -----------------------------------------------------------------
+
+  /** Only ACTIVE and SUSPENDED can be closed (OrganizationMustBeClosableRule). */
+  @ParameterizedTest
+  @CsvSource({
+      "PENDING_ACTIVATION, ORGANIZATION_CANNOT_BE_CLOSED",
+      "CLOSED, ORGANIZATION_ALREADY_CLOSED"
+  })
+  void shouldRejectClosureWhenOrganizationIsNotClosable(
+      OrganizationStatus status,
+      String code
+  ) throws Exception {
+    Organization organization = organization(status);
+    InMemoryOrganizationRepository repository = repositoryWith(organization);
+    delegateToRealCloseOrganizationHandler(repository);
+
+    closeOrganization(ORGANIZATION_ID.toString())
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$", aMapWithSize(3)))
+        .andExpect(jsonPath("$.code").value(code))
+        .andExpect(jsonPath("$.message").exists())
+        .andExpect(jsonPath("$.timestamp").exists());
+
+    assertThat(repository.saveCount()).isZero();
+    assertThat(organization.status()).isEqualTo(status);
+  }
+
+  /** A repeat of a successful closure (Architect decision 3). */
+  @Test
+  void shouldAnswerRepeatedClosureWithAlreadyClosed() throws Exception {
+    InMemoryOrganizationRepository repository = repositoryWith(
+        organization(OrganizationStatus.ACTIVE)
+    );
+    delegateToRealCloseOrganizationHandler(repository);
+
+    closeOrganization(ORGANIZATION_ID.toString())
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("CLOSED"));
+    closeOrganization(ORGANIZATION_ID.toString())
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("ORGANIZATION_ALREADY_CLOSED"));
+
+    assertThat(repository.saveCount()).isEqualTo(1);
+    assertThat(storedOrganization(repository).status())
+        .isEqualTo(OrganizationStatus.CLOSED);
+  }
+
+  @Test
+  void shouldReturnConflictOnConcurrentClosure() throws Exception {
+    when(closeOrganizationHandler.handle(any())).thenThrow(
+        new OptimisticLockingFailureException("stale")
+    );
+
+    closeOrganization(ORGANIZATION_ID.toString())
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$", aMapWithSize(3)))
+        .andExpect(jsonPath("$.code").value("CONCURRENT_MODIFICATION"));
+  }
+
   // --- Helpers -------------------------------------------------------------
 
   private ResultActions addStore(String id, String body) throws Exception {
@@ -1602,5 +1847,51 @@ class TenantOrganizationControllerTest {
             + " " + store.isActive())
         .sorted()
         .toList();
+  }
+
+  // --- Helpers for POST /closure -------------------------------------------
+
+  /**
+   * Closes tenant A's organization in {@code status} over the real handler
+   * and checks the full contract: 200, exactly organizationId, status and
+   * closedAt, no tenantId and no Location, and CLOSED saved once.
+   */
+  private void shouldCloseOrganizationFrom(OrganizationStatus status)
+      throws Exception {
+    InMemoryOrganizationRepository repository = repositoryWith(
+        organization(status)
+    );
+    delegateToRealCloseOrganizationHandler(repository);
+
+    closeOrganization(ORGANIZATION_ID.toString())
+        .andExpect(status().isOk())
+        .andExpect(header().doesNotExist(HttpHeaders.LOCATION))
+        .andExpect(jsonPath("$", aMapWithSize(3)))
+        .andExpect(jsonPath("$.organizationId")
+            .value(ORGANIZATION_ID.toString()))
+        .andExpect(jsonPath("$.status").value("CLOSED"))
+        .andExpect(jsonPath("$.closedAt").value(CLOSED_AT.toString()))
+        .andExpect(jsonPath("$.tenantId").doesNotExist());
+
+    assertThat(repository.saveCount()).isEqualTo(1);
+    assertThat(storedOrganization(repository).status())
+        .isEqualTo(OrganizationStatus.CLOSED);
+  }
+
+  private ResultActions closeOrganization(String id) throws Exception {
+    return mockMvc.perform(post(CLOSURE_PATH, id));
+  }
+
+  private void delegateToRealCloseOrganizationHandler(
+      InMemoryOrganizationRepository repository
+  ) {
+    CloseOrganizationHandler realHandler = new CloseOrganizationHandler(
+        repository,
+        UUID::randomUUID,
+        () -> CLOSED_AT,
+        new InMemoryDomainEventPublisher()
+    );
+    doAnswer(invocation -> realHandler.handle(invocation.getArgument(0)))
+        .when(closeOrganizationHandler).handle(any());
   }
 }
