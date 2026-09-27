@@ -2,11 +2,14 @@ package com.zim.organization.presentation.rest;
 
 import com.zim.organization.application.command.AddStoreCommand;
 import com.zim.organization.application.command.ChangeHeadquartersCommand;
+import com.zim.organization.application.command.DeactivateStoreCommand;
 import com.zim.organization.application.exception.OrganizationNotFoundException;
 import com.zim.organization.application.handler.AddStoreHandler;
 import com.zim.organization.application.handler.ChangeHeadquartersHandler;
+import com.zim.organization.application.handler.DeactivateStoreHandler;
 import com.zim.organization.application.result.AddStoreResult;
 import com.zim.organization.application.result.ChangeHeadquartersResult;
+import com.zim.organization.application.result.DeactivateStoreResult;
 import com.zim.organization.domain.model.Organization;
 import com.zim.organization.domain.model.OrganizationStatus;
 import com.zim.organization.domain.model.Store;
@@ -107,6 +110,15 @@ class TenantOrganizationControllerTest {
   private static final String HEADQUARTERS_PATH =
       "/api/organizations/{id}/headquarters";
 
+  private static final String DEACTIVATION_PATH =
+      "/api/organizations/{id}/stores/{storeId}/deactivation";
+
+  private static final Instant DEACTIVATED_AT =
+      Instant.parse("2026-08-28T10:00:00Z");
+
+  private static final UUID UNKNOWN_STORE_ID =
+      UUID.fromString("0b7d3e5f-9a1c-4d2e-8f6a-3c5e7a9b1d24");
+
   private static final String VALID_BODY = """
       {"storeCode": "thies-02", "storeName": "Magasin 2"}
       """;
@@ -119,6 +131,9 @@ class TenantOrganizationControllerTest {
 
   @MockitoBean
   private ChangeHeadquartersHandler changeHeadquartersHandler;
+
+  @MockitoBean
+  private DeactivateStoreHandler deactivateStoreHandler;
 
   @MockitoBean
   private CurrentTenantProvider currentTenantProvider;
@@ -903,6 +918,405 @@ class TenantOrganizationControllerTest {
         .andExpect(jsonPath("$.code").value("CONCURRENT_MODIFICATION"));
   }
 
+  // =========================================================================
+  // POST /api/organizations/{id}/stores/{storeId}/deactivation (T5c)
+  //
+  // ORGANIZATION_MUST_KEEP_ONE_ACTIVE_STORE is not tested here: it can't be
+  // reached through this endpoint. The headquarters can't be deactivated and
+  // an inactive store can't become headquarters, so the headquarters is
+  // always active (also enforced by V1 ck_stores_headquarters_active). The
+  // rule stays covered by the domain tests only.
+  // =========================================================================
+
+  // --- Success -------------------------------------------------------------
+
+  @Test
+  void shouldDeactivateActiveNonHeadquartersStore() throws Exception {
+    Organization organization = organizationForDeactivation(
+        OrganizationStatus.ACTIVE,
+        DeactivationTarget.ACTIVE_STORE
+    );
+    InMemoryOrganizationRepository repository = repositoryWith(organization);
+    delegateToRealDeactivateStoreHandler(repository);
+
+    deactivateStore(ORGANIZATION_ID.toString(), NEW_STORE_ID.toString())
+        .andExpect(status().isOk())
+        .andExpect(header().doesNotExist(HttpHeaders.LOCATION))
+        .andExpect(jsonPath("$", aMapWithSize(4)))
+        .andExpect(jsonPath("$.organizationId")
+            .value(ORGANIZATION_ID.toString()))
+        .andExpect(jsonPath("$.storeId").value(NEW_STORE_ID.toString()))
+        .andExpect(jsonPath("$.active").value(false))
+        .andExpect(jsonPath("$.deactivatedAt")
+            .value(DEACTIVATED_AT.toString()))
+        .andExpect(jsonPath("$.tenantId").doesNotExist());
+
+    assertThat(repository.saveCount()).isEqualTo(1);
+    List<Store> stores = storedOrganization(repository).stores();
+    assertThat(stores)
+        .filteredOn(store -> store.id().value().equals(NEW_STORE_ID))
+        .singleElement()
+        .satisfies(store -> {
+          assertThat(store.isActive()).isFalse();
+          assertThat(store.isHeadquarters()).isFalse();
+        });
+    assertThat(stores)
+        .filteredOn(Store::isHeadquarters)
+        .singleElement()
+        .satisfies(store -> {
+          assertThat(store.id().value()).isEqualTo(HEADQUARTERS_ID);
+          assertThat(store.isActive()).isTrue();
+        });
+  }
+
+  /**
+   * The command carries the provider's tenant and both path ids. The
+   * endpoint has no request body: whatever is sent, including a tenantId
+   * set to another tenant or malformed JSON, is ignored, and so is a tenant
+   * header.
+   */
+  @ParameterizedTest
+  @ValueSource(strings = {
+      "",
+      "{\"tenantId\": \"9a4c2e71-5b3d-4f8a-b6c1-0d2e4f6a8b13\"}",
+      "{\"storeId\": \"LEAK-4711\","
+  })
+  void shouldTakeTenantAndIdsOnlyFromProviderAndPathWhenDeactivatingStore(
+      String body
+  ) throws Exception {
+    when(deactivateStoreHandler.handle(any())).thenReturn(
+        new DeactivateStoreResult(
+            ORGANIZATION_ID,
+            NEW_STORE_ID,
+            false,
+            DEACTIVATED_AT
+        )
+    );
+
+    mockMvc.perform(
+            post(DEACTIVATION_PATH, ORGANIZATION_ID, NEW_STORE_ID)
+                .header("X-Tenant-Id", OTHER_TENANT_ID.toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body)
+        )
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.storeId").value(NEW_STORE_ID.toString()))
+        .andExpect(jsonPath("$.active").value(false));
+
+    ArgumentCaptor<DeactivateStoreCommand> command =
+        ArgumentCaptor.forClass(DeactivateStoreCommand.class);
+    verify(deactivateStoreHandler).handle(command.capture());
+    assertThat(command.getValue()).isEqualTo(new DeactivateStoreCommand(
+        new TenantId(TENANT_ID),
+        ORGANIZATION_ID,
+        NEW_STORE_ID
+    ));
+    verify(currentTenantProvider, times(1)).currentTenant();
+  }
+
+  // --- 401 -----------------------------------------------------------------
+
+  @Test
+  void shouldReturnUnauthorizedOnDeactivationWhenTenantIsNotResolved()
+      throws Exception {
+    when(currentTenantProvider.currentTenant())
+        .thenThrow(new TenantNotResolvedException());
+
+    deactivateStore(ORGANIZATION_ID.toString(), NEW_STORE_ID.toString())
+        .andExpect(status().isUnauthorized())
+        .andExpect(header().string(
+            HttpHeaders.WWW_AUTHENTICATE,
+            "Bearer realm=\"quine-erp\""
+        ))
+        .andExpect(jsonPath("$", aMapWithSize(3)))
+        .andExpect(jsonPath("$.code").value("TENANT_NOT_RESOLVED"));
+
+    verifyNoInteractions(deactivateStoreHandler);
+  }
+
+  // --- 400 -----------------------------------------------------------------
+
+  /**
+   * A malformed organization id or store id names the parameter, never the
+   * submitted value.
+   */
+  @ParameterizedTest
+  @CsvSource({
+      "not-a-uuid-4711, 86fd6eb4-23f6-4381-842e-e5d57def4a39, id",
+      "5c80d578-83f7-4b44-b5f7-598530067a09, not-a-uuid-4711, storeId"
+  })
+  void shouldReturnBadRequestOnDeactivationWhenPathIdIsNotUuid(
+      String id,
+      String storeId,
+      String parameter
+  ) throws Exception {
+    String body = deactivateStore(id, storeId)
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$", aMapWithSize(3)))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+        .andExpect(jsonPath("$.message")
+            .value(parameter + ": must be a valid UUID"))
+        .andExpect(jsonPath("$.timestamp").exists())
+        .andReturn().getResponse().getContentAsString();
+
+    assertThat(body).doesNotContain("not-a-uuid-4711");
+    verifyNoInteractions(deactivateStoreHandler);
+  }
+
+  /** 400 before 401 (Architect decision 5), for either path id. */
+  @ParameterizedTest
+  @CsvSource({
+      "not-a-uuid, 86fd6eb4-23f6-4381-842e-e5d57def4a39",
+      "5c80d578-83f7-4b44-b5f7-598530067a09, not-a-uuid"
+  })
+  void shouldValidateDeactivationPathBeforeResolvingTenant(
+      String id,
+      String storeId
+  ) throws Exception {
+    when(currentTenantProvider.currentTenant())
+        .thenThrow(new TenantNotResolvedException());
+
+    deactivateStore(id, storeId)
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+    verifyNoInteractions(currentTenantProvider);
+    verifyNoInteractions(deactivateStoreHandler);
+  }
+
+  // --- 404 -----------------------------------------------------------------
+
+  @Test
+  void shouldReturnNotFoundOnDeactivationWhenOrganizationDoesNotExist()
+      throws Exception {
+    delegateToRealDeactivateStoreHandler(new InMemoryOrganizationRepository());
+
+    deactivateStore(ORGANIZATION_ID.toString(), NEW_STORE_ID.toString())
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$", aMapWithSize(3)))
+        .andExpect(jsonPath("$.code").value("ORGANIZATION_NOT_FOUND"));
+  }
+
+  /**
+   * Tenant B sends A's organization id and a store id of A. Whatever A's
+   * status and whatever that store is (an active store, an inactive one, the
+   * headquarters, or for PENDING_ACTIVATION, which only has its
+   * headquarters, also an unknown id), B gets exactly the missing
+   * organization's 404, never one of the 409s A would get, and A's stores
+   * are unchanged. Both responses come from the real handler.
+   */
+  @ParameterizedTest
+  @CsvSource({
+      "ACTIVE, ACTIVE_STORE",
+      "ACTIVE, INACTIVE_STORE",
+      "ACTIVE, HEADQUARTERS",
+      "PENDING_ACTIVATION, HEADQUARTERS",
+      "PENDING_ACTIVATION, UNKNOWN_STORE",
+      "SUSPENDED, ACTIVE_STORE",
+      "SUSPENDED, INACTIVE_STORE",
+      "SUSPENDED, HEADQUARTERS",
+      "CLOSED, ACTIVE_STORE",
+      "CLOSED, INACTIVE_STORE",
+      "CLOSED, HEADQUARTERS"
+  })
+  void shouldMapWrongTenantAndMissingOrganizationToIdenticalNotFoundOnDeactivation(
+      OrganizationStatus status,
+      DeactivationTarget target
+  ) throws Exception {
+    when(currentTenantProvider.currentTenant())
+        .thenReturn(new TenantId(OTHER_TENANT_ID));
+
+    Organization owned = organizationForDeactivation(status, target);
+    List<String> storesBefore = storeStates(owned);
+    InMemoryOrganizationRepository ownedByA = repositoryWith(owned);
+
+    delegateToRealDeactivateStoreHandler(ownedByA);
+    String wrongTenantBody = deactivateStore(
+        ORGANIZATION_ID.toString(),
+        target.storeId().toString()
+    )
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("ORGANIZATION_NOT_FOUND"))
+        .andExpect(jsonPath("$.timestamp").exists())
+        .andReturn().getResponse().getContentAsString();
+
+    delegateToRealDeactivateStoreHandler(new InMemoryOrganizationRepository());
+    String missingBody = deactivateStore(
+        ORGANIZATION_ID.toString(),
+        target.storeId().toString()
+    )
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("ORGANIZATION_NOT_FOUND"))
+        .andExpect(jsonPath("$.timestamp").exists())
+        .andReturn().getResponse().getContentAsString();
+
+    assertThat(withoutTimestamp(wrongTenantBody))
+        .isEqualTo(withoutTimestamp(missingBody));
+    assertThat(ownedByA.saveCount()).isZero();
+    assertThat(owned.status()).isEqualTo(status);
+    assertThat(storeStates(owned)).isEqualTo(storesBefore);
+  }
+
+  // --- 409 -----------------------------------------------------------------
+
+  /**
+   * The status rule is checked first: whatever the store (even an unknown
+   * id or the headquarters), a non-active organization gets the status code.
+   */
+  @ParameterizedTest
+  @CsvSource({
+      "PENDING_ACTIVATION, HEADQUARTERS",
+      "PENDING_ACTIVATION, UNKNOWN_STORE",
+      "SUSPENDED, ACTIVE_STORE",
+      "SUSPENDED, INACTIVE_STORE",
+      "SUSPENDED, HEADQUARTERS",
+      "SUSPENDED, UNKNOWN_STORE",
+      "CLOSED, ACTIVE_STORE",
+      "CLOSED, INACTIVE_STORE",
+      "CLOSED, HEADQUARTERS",
+      "CLOSED, UNKNOWN_STORE"
+  })
+  void shouldRejectDeactivationWhenOrganizationIsNotActive(
+      OrganizationStatus status,
+      DeactivationTarget target
+  ) throws Exception {
+    Organization organization = organizationForDeactivation(status, target);
+    List<String> storesBefore = storeStates(organization);
+    InMemoryOrganizationRepository repository = repositoryWith(organization);
+    delegateToRealDeactivateStoreHandler(repository);
+
+    deactivateStore(ORGANIZATION_ID.toString(), target.storeId().toString())
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$", aMapWithSize(3)))
+        .andExpect(jsonPath("$.code")
+            .value("ORGANIZATION_MUST_BE_ACTIVE_TO_DEACTIVATE_STORE"));
+
+    assertThat(repository.saveCount()).isZero();
+    assertThat(storeStates(organization)).isEqualTo(storesBefore);
+  }
+
+  /**
+   * An unknown store id and a store of another tenant's organization get
+   * the same 409 (Architect decision 9), so the answer reveals nothing about
+   * other tenants' stores. The message quotes the storeId from the caller's
+   * own path; apart from that and the timestamp the bodies are identical.
+   */
+  @Test
+  void shouldRejectUnknownAndOtherTenantStoreOnDeactivationWithSameConflict()
+      throws Exception {
+    Organization organization = organizationForDeactivation(
+        OrganizationStatus.ACTIVE,
+        DeactivationTarget.ACTIVE_STORE
+    );
+    Organization ofOtherTenant = organizationOfOtherTenant();
+    InMemoryOrganizationRepository repository = repositoryWith(organization);
+    repository.add(ofOtherTenant);
+    delegateToRealDeactivateStoreHandler(repository);
+
+    String otherTenantStoreBody = deactivateStore(
+        ORGANIZATION_ID.toString(),
+        OTHER_TENANT_STORE_ID.toString()
+    )
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$", aMapWithSize(3)))
+        .andExpect(jsonPath("$.code")
+            .value("STORE_DOES_NOT_BELONG_TO_ORGANIZATION"))
+        .andReturn().getResponse().getContentAsString();
+
+    String unknownStoreBody = deactivateStore(
+        ORGANIZATION_ID.toString(),
+        UNKNOWN_STORE_ID.toString()
+    )
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code")
+            .value("STORE_DOES_NOT_BELONG_TO_ORGANIZATION"))
+        .andReturn().getResponse().getContentAsString();
+
+    assertThat(
+        withoutTimestamp(otherTenantStoreBody)
+            .replace(OTHER_TENANT_STORE_ID.toString(), "{storeId}")
+    ).isEqualTo(
+        withoutTimestamp(unknownStoreBody)
+            .replace(UNKNOWN_STORE_ID.toString(), "{storeId}")
+    );
+    assertThat(repository.saveCount()).isZero();
+    assertThat(ofOtherTenant.stores()).allMatch(Store::isActive);
+  }
+
+  @Test
+  void shouldRejectHeadquartersDeactivation() throws Exception {
+    Organization organization = organizationForDeactivation(
+        OrganizationStatus.ACTIVE,
+        DeactivationTarget.HEADQUARTERS
+    );
+    InMemoryOrganizationRepository repository = repositoryWith(organization);
+    delegateToRealDeactivateStoreHandler(repository);
+
+    deactivateStore(ORGANIZATION_ID.toString(), HEADQUARTERS_ID.toString())
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$", aMapWithSize(3)))
+        .andExpect(jsonPath("$.code")
+            .value("HEADQUARTERS_CANNOT_BE_DEACTIVATED"));
+
+    assertThat(repository.saveCount()).isZero();
+    assertThat(storedOrganization(repository).stores())
+        .filteredOn(Store::isHeadquarters)
+        .singleElement()
+        .satisfies(store -> {
+          assertThat(store.id().value()).isEqualTo(HEADQUARTERS_ID);
+          assertThat(store.isActive()).isTrue();
+        });
+  }
+
+  @Test
+  void shouldRejectDeactivationOfInactiveStore() throws Exception {
+    Organization organization = organizationForDeactivation(
+        OrganizationStatus.ACTIVE,
+        DeactivationTarget.INACTIVE_STORE
+    );
+    InMemoryOrganizationRepository repository = repositoryWith(organization);
+    delegateToRealDeactivateStoreHandler(repository);
+
+    deactivateStore(ORGANIZATION_ID.toString(), NEW_STORE_ID.toString())
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$", aMapWithSize(3)))
+        .andExpect(jsonPath("$.code").value("STORE_ALREADY_INACTIVE"));
+
+    assertThat(repository.saveCount()).isZero();
+  }
+
+  /** A repeat of a successful deactivation (Architect decision 3). */
+  @Test
+  void shouldAnswerRepeatedDeactivationWithAlreadyInactive() throws Exception {
+    InMemoryOrganizationRepository repository = repositoryWith(
+        organizationForDeactivation(
+            OrganizationStatus.ACTIVE,
+            DeactivationTarget.ACTIVE_STORE
+        )
+    );
+    delegateToRealDeactivateStoreHandler(repository);
+
+    deactivateStore(ORGANIZATION_ID.toString(), NEW_STORE_ID.toString())
+        .andExpect(status().isOk());
+    deactivateStore(ORGANIZATION_ID.toString(), NEW_STORE_ID.toString())
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("STORE_ALREADY_INACTIVE"));
+
+    assertThat(repository.saveCount()).isEqualTo(1);
+  }
+
+  @Test
+  void shouldReturnConflictOnConcurrentDeactivation() throws Exception {
+    when(deactivateStoreHandler.handle(any())).thenThrow(
+        new OptimisticLockingFailureException("stale")
+    );
+
+    deactivateStore(ORGANIZATION_ID.toString(), NEW_STORE_ID.toString())
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$", aMapWithSize(3)))
+        .andExpect(jsonPath("$.code").value("CONCURRENT_MODIFICATION"));
+  }
+
   // --- Helpers -------------------------------------------------------------
 
   private ResultActions addStore(String id, String body) throws Exception {
@@ -1092,5 +1506,101 @@ class TenantOrganizationControllerTest {
         CREATED_AT,
         0L
     );
+  }
+
+  // --- Helpers for POST /stores/{storeId}/deactivation ---------------------
+
+  /** The store a deactivation request targets. */
+  enum DeactivationTarget {
+    ACTIVE_STORE(NEW_STORE_ID),
+    INACTIVE_STORE(NEW_STORE_ID),
+    HEADQUARTERS(HEADQUARTERS_ID),
+    UNKNOWN_STORE(UNKNOWN_STORE_ID);
+
+    private final UUID storeId;
+
+    DeactivationTarget(UUID storeId) {
+      this.storeId = storeId;
+    }
+
+    UUID storeId() {
+      return storeId;
+    }
+  }
+
+  private ResultActions deactivateStore(String id, String storeId)
+      throws Exception {
+    return mockMvc.perform(post(DEACTIVATION_PATH, id, storeId));
+  }
+
+  private void delegateToRealDeactivateStoreHandler(
+      InMemoryOrganizationRepository repository
+  ) {
+    DeactivateStoreHandler realHandler = new DeactivateStoreHandler(
+        repository,
+        UUID::randomUUID,
+        () -> DEACTIVATED_AT,
+        new InMemoryDomainEventPublisher()
+    );
+    doAnswer(invocation -> realHandler.handle(invocation.getArgument(0)))
+        .when(deactivateStoreHandler).handle(any());
+  }
+
+  /**
+   * Tenant A's organization in the given status, built only through the
+   * aggregate's own behaviour so that every fixture is a state the domain
+   * can reach. PENDING_ACTIVATION only ever has its headquarters, so it can
+   * only be targeted at the headquarters or an unknown id. Otherwise the
+   * organization is activated, gets a second store THIES-02
+   * ({@code NEW_STORE_ID}), deactivated for {@code INACTIVE_STORE}, and is
+   * then suspended or closed as requested.
+   */
+  private static Organization organizationForDeactivation(
+      OrganizationStatus status,
+      DeactivationTarget target
+  ) {
+    if (status == OrganizationStatus.PENDING_ACTIVATION) {
+      assertThat(target).isIn(
+          DeactivationTarget.HEADQUARTERS,
+          DeactivationTarget.UNKNOWN_STORE
+      );
+      return organization(OrganizationStatus.PENDING_ACTIVATION);
+    }
+
+    Organization organization = organization(OrganizationStatus.ACTIVE);
+    organization.addStore(
+        new StoreId(NEW_STORE_ID),
+        new StoreCode("THIES-02"),
+        new StoreName("Magasin 2"),
+        UUID.randomUUID(),
+        CREATED_AT
+    );
+    if (target == DeactivationTarget.INACTIVE_STORE) {
+      organization.deactivateStore(
+          new StoreId(NEW_STORE_ID),
+          UUID.randomUUID(),
+          CREATED_AT
+      );
+    }
+    if (status == OrganizationStatus.SUSPENDED) {
+      organization.suspend(UUID.randomUUID(), CREATED_AT);
+    }
+    if (status == OrganizationStatus.CLOSED) {
+      organization.close(UUID.randomUUID(), CREATED_AT);
+    }
+
+    organization.clearDomainEvents();
+    assertThat(organization.status()).isEqualTo(status);
+    return organization;
+  }
+
+  /** Each store as "id headquarters active", to compare before and after. */
+  private static List<String> storeStates(Organization organization) {
+    return organization.stores().stream()
+        .map(store -> store.id().value()
+            + " " + store.isHeadquarters()
+            + " " + store.isActive())
+        .sorted()
+        .toList();
   }
 }
