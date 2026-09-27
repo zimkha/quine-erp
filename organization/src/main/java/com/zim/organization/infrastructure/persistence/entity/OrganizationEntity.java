@@ -10,142 +10,157 @@ import java.util.UUID;
 
 @Entity
 @Table(
-        name = "organizations",
-        schema = "organization"
+    name = "organizations",
+    schema = "organization"
 )
 public class OrganizationEntity {
 
-    @Id
-    @Column(
-            name = "id",
-            nullable = false,
-            updatable = false
-    )
-    private UUID id;
+  @Id
+  @Column(
+      name = "id",
+      nullable = false,
+      updatable = false
+  )
+  private UUID id;
 
-    @Column(
-            name = "tenant_id",
-            nullable = false,
-            unique = true,
-            updatable = false
-    )
-    private UUID tenantId;
+  @Column(
+      name = "tenant_id",
+      nullable = false,
+      unique = true,
+      updatable = false
+  )
+  private UUID tenantId;
 
-    @Column(
-            name = "name",
-            nullable = false,
-            length = 120
-    )
-    private String name;
+  @Column(
+      name = "name",
+      nullable = false,
+      length = 120
+  )
+  private String name;
 
-    @Column(
-            name = "legal_name",
-            nullable = false,
-            length = 160
-    )
-    private String legalName;
+  @Column(
+      name = "legal_name",
+      nullable = false,
+      length = 160
+  )
+  private String legalName;
 
-    @Column(
-            name = "normalized_legal_name",
-            nullable = false,
-            length = 160,
-            unique = true
-    )
-    private String normalizedLegalName;
+  @Column(
+      name = "normalized_legal_name",
+      nullable = false,
+      length = 160,
+      unique = true
+  )
+  private String normalizedLegalName;
 
-    @Column(
-            name = "currency",
-            nullable = false,
-            length = 3
-    )
-    private String currency;
+  @Column(
+      name = "currency",
+      nullable = false,
+      length = 3
+  )
+  private String currency;
 
-    @Column(
-            name = "status",
-            nullable = false,
-            length = 30
-    )
-    private String status;
+  @Column(
+      name = "status",
+      nullable = false,
+      length = 30
+  )
+  private String status;
 
-    @Column(
-            name = "created_at",
-            nullable = false,
-            updatable = false
-    )
-    private Instant createdAt;
+  @Column(
+      name = "created_at",
+      nullable = false,
+      updatable = false
+  )
+  private Instant createdAt;
 
-    @OneToMany(
-            mappedBy = "organization",
-            cascade = CascadeType.ALL,
-            fetch = FetchType.LAZY
-    )
-    private List<StoreEntity> stores = new ArrayList<>();
+  @Version
+  @Column(
+      name = "version",
+      nullable = false
+  )
+  private Long version;
 
-    protected OrganizationEntity() {
-        // Required by JPA
-    }
+  @OneToMany(
+      mappedBy = "organization",
+      cascade = CascadeType.ALL,
+      fetch = FetchType.LAZY
+  )
+  private List<StoreEntity> stores = new ArrayList<>();
 
-    public OrganizationEntity(
-            UUID id,
-            UUID tenantId,
-            String name,
-            String legalName,
-            String normalizedLegalName,
-            String currency,
-            String status,
-            Instant createdAt
-    ) {
-        this.id = Objects.requireNonNull(id);
-        this.tenantId = Objects.requireNonNull(tenantId);
-        this.name = Objects.requireNonNull(name);
-        this.legalName = Objects.requireNonNull(legalName);
-        this.normalizedLegalName =
-                Objects.requireNonNull(normalizedLegalName);
-        this.currency = Objects.requireNonNull(currency);
-        this.status = Objects.requireNonNull(status);
-        this.createdAt = Objects.requireNonNull(createdAt);
-    }
+  protected OrganizationEntity() {
+    // Required by JPA
+  }
 
-    public void addStore(StoreEntity store) {
-        Objects.requireNonNull(store, "Store cannot be null");
+  public OrganizationEntity(
+      UUID id,
+      UUID tenantId,
+      String name,
+      String legalName,
+      String normalizedLegalName,
+      String currency,
+      String status,
+      Instant createdAt
+  ) {
+    this.id = Objects.requireNonNull(id);
+    this.tenantId = Objects.requireNonNull(tenantId);
+    this.name = Objects.requireNonNull(name);
+    this.legalName = Objects.requireNonNull(legalName);
+    this.normalizedLegalName =
+        Objects.requireNonNull(normalizedLegalName);
+    this.currency = Objects.requireNonNull(currency);
+    this.status = Objects.requireNonNull(status);
+    this.createdAt = Objects.requireNonNull(createdAt);
+  }
 
-        stores.add(store);
-        store.attachTo(this);
-    }
+  public void changeStatus(String status) {
+    this.status = Objects.requireNonNull(status);
+  }
 
-    public UUID getId() {
-        return id;
-    }
+  public void addStore(StoreEntity store) {
+    Objects.requireNonNull(store, "Store cannot be null");
 
-    public UUID getTenantId() {
-        return tenantId;
-    }
+    stores.add(store);
+    store.attachTo(this);
+  }
 
-    public String getName() {
-        return name;
-    }
+  public UUID getId() {
+    return id;
+  }
 
-    public String getLegalName() {
-        return legalName;
-    }
+  public UUID getTenantId() {
+    return tenantId;
+  }
 
-    public String getNormalizedLegalName() {
-        return normalizedLegalName;
-    }
+  public String getName() {
+    return name;
+  }
 
-    public String getCurrency() {
-        return currency;
-    }
+  public String getLegalName() {
+    return legalName;
+  }
 
-    public String getStatus() {
-        return status;
-    }
+  public String getNormalizedLegalName() {
+    return normalizedLegalName;
+  }
 
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
+  public String getCurrency() {
+    return currency;
+  }
 
-    public List<StoreEntity> getStores() {
-        return List.copyOf(stores);
-    }
+  public String getStatus() {
+    return status;
+  }
+
+  public Instant getCreatedAt() {
+    return createdAt;
+  }
+
+  public Long getVersion() {
+    return version;
+  }
+
+  public List<StoreEntity> getStores() {
+    return List.copyOf(stores);
+  }
 }

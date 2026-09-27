@@ -9,48 +9,56 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+/**
+ * Base class for JPA integration tests against a real Postgres.
+ *
+ * <p>The container is a JVM-wide singleton (stopped by Testcontainers' Ryuk
+ * at JVM exit) rather than a JUnit-managed {@code @Container}: Spring caches
+ * the application context across test classes, so the database it migrated
+ * must outlive any single test class.
+ */
 @DataJpaTest
-@Testcontainers
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(
-        replace = AutoConfigureTestDatabase.Replace.NONE
+    replace = AutoConfigureTestDatabase.Replace.NONE
 )
 @ImportAutoConfiguration(
-        FlywayAutoConfiguration.class
+    FlywayAutoConfiguration.class
 )
 @Import(
-        OrganizationJpaTestApplication.class
+    OrganizationJpaTestApplication.class
 )
 public abstract class PostgresIntegrationTest {
 
-    @Container
-    static final PostgreSQLContainer POSTGRES =
-            new PostgreSQLContainer("postgres:17-alpine")
-                    .withDatabaseName("quine")
-                    .withUsername("quine")
-                    .withPassword("quine");
+  static final PostgreSQLContainer POSTGRES =
+      new PostgreSQLContainer("postgres:17-alpine")
+          .withDatabaseName("quine")
+          .withUsername("quine")
+          .withPassword("quine");
 
-    @DynamicPropertySource
-    static void configurePostgres(
-            DynamicPropertyRegistry registry
-    ) {
-        registry.add(
-                "spring.datasource.url",
-                POSTGRES::getJdbcUrl
-        );
+  static {
+    POSTGRES.start();
+  }
 
-        registry.add(
-                "spring.datasource.username",
-                POSTGRES::getUsername
-        );
+  @DynamicPropertySource
+  static void configurePostgres(
+      DynamicPropertyRegistry registry
+  ) {
+    registry.add(
+        "spring.datasource.url",
+        POSTGRES::getJdbcUrl
+    );
 
-        registry.add(
-                "spring.datasource.password",
-                POSTGRES::getPassword
-        );
-    }
+    registry.add(
+        "spring.datasource.username",
+        POSTGRES::getUsername
+    );
+
+    registry.add(
+        "spring.datasource.password",
+        POSTGRES::getPassword
+    );
+  }
 }

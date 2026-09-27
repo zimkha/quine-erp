@@ -1,27 +1,31 @@
 package com.zim.organization.domain.valueobject;
 
+import com.zim.organization.domain.exception.InvalidValueException;
+
 import java.util.Objects;
 
 public record StoreName(String value) {
 
-    private static final int MIN_LENGTH = 2;
-    private static final int MAX_LENGTH = 120;
+  private static final int MIN_LENGTH = 2;
+  private static final int MAX_LENGTH = 120;
 
-    public StoreName {
-        Objects.requireNonNull(value, "Store name cannot be null");
+  public StoreName {
+    Objects.requireNonNull(value, "Store name cannot be null");
 
-        value = value.trim();
+    value = value.trim();
 
-        if (value.length() < MIN_LENGTH) {
-            throw new IllegalArgumentException(
-                    "Store name must contain at least " + MIN_LENGTH + " characters"
-            );
-        }
-
-        if (value.length() > MAX_LENGTH) {
-            throw new IllegalArgumentException(
-                    "Store name cannot exceed " + MAX_LENGTH + " characters"
-            );
-        }
+    if (value.length() < MIN_LENGTH) {
+      throw new InvalidValueException(
+          "INVALID_STORE_NAME",
+          "Store name must contain at least " + MIN_LENGTH + " characters"
+      );
     }
+
+    if (value.length() > MAX_LENGTH) {
+      throw new InvalidValueException(
+          "INVALID_STORE_NAME",
+          "Store name cannot exceed " + MAX_LENGTH + " characters"
+      );
+    }
+  }
 }

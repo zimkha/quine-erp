@@ -15,77 +15,77 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
-public final class ActivateOrganizationHandler {
+public class ActivateOrganizationHandler {
 
-    private final OrganizationRepository organizationRepository;
-    private final EventIdGenerator eventIdGenerator;
-    private final ClockProvider clockProvider;
-    private final DomainEventPublisher domainEventPublisher;
+  private final OrganizationRepository organizationRepository;
+  private final EventIdGenerator eventIdGenerator;
+  private final ClockProvider clockProvider;
+  private final DomainEventPublisher domainEventPublisher;
 
-    public ActivateOrganizationHandler(
-            OrganizationRepository organizationRepository,
-            EventIdGenerator eventIdGenerator,
-            ClockProvider clockProvider,
-            DomainEventPublisher domainEventPublisher
-    ) {
-        this.organizationRepository = Objects.requireNonNull(
-                organizationRepository,
-                "Organization repository cannot be null"
-        );
-        this.eventIdGenerator = Objects.requireNonNull(
-                eventIdGenerator,
-                "Event id generator cannot be null"
-        );
-        this.clockProvider = Objects.requireNonNull(
-                clockProvider,
-                "Clock provider cannot be null"
-        );
-        this.domainEventPublisher = Objects.requireNonNull(
-                domainEventPublisher,
-                "Domain event publisher cannot be null"
-        );
-    }
+  public ActivateOrganizationHandler(
+      OrganizationRepository organizationRepository,
+      EventIdGenerator eventIdGenerator,
+      ClockProvider clockProvider,
+      DomainEventPublisher domainEventPublisher
+  ) {
+    this.organizationRepository = Objects.requireNonNull(
+        organizationRepository,
+        "Organization repository cannot be null"
+    );
+    this.eventIdGenerator = Objects.requireNonNull(
+        eventIdGenerator,
+        "Event id generator cannot be null"
+    );
+    this.clockProvider = Objects.requireNonNull(
+        clockProvider,
+        "Clock provider cannot be null"
+    );
+    this.domainEventPublisher = Objects.requireNonNull(
+        domainEventPublisher,
+        "Domain event publisher cannot be null"
+    );
+  }
 
-    public ActivateOrganizationResult handle(
-            ActivateOrganizationCommand command
-    ) {
-        Objects.requireNonNull(command, "Command cannot be null");
+  public ActivateOrganizationResult handle(
+      ActivateOrganizationCommand command
+  ) {
+    Objects.requireNonNull(command, "Command cannot be null");
 
-        OrganizationId organizationId =
-                new OrganizationId(command.organizationId());
+    OrganizationId organizationId =
+        new OrganizationId(command.organizationId());
 
-        Organization organization = organizationRepository
-                .findById(organizationId)
-                .orElseThrow(
-                        () -> new OrganizationNotFoundException(
-                                command.organizationId()
-                        )
-                );
-
-        UUID eventId = Objects.requireNonNull(
-                eventIdGenerator.generate(),
-                "Generated event id cannot be null"
+    Organization organization = organizationRepository
+        .findById(organizationId)
+        .orElseThrow(
+            () -> new OrganizationNotFoundException(
+                command.organizationId()
+            )
         );
 
-        Instant activatedAt = Objects.requireNonNull(
-                clockProvider.now(),
-                "Current time cannot be null"
-        );
+    UUID eventId = Objects.requireNonNull(
+        eventIdGenerator.generate(),
+        "Generated event id cannot be null"
+    );
 
-        organization.activate(eventId, activatedAt);
+    Instant activatedAt = Objects.requireNonNull(
+        clockProvider.now(),
+        "Current time cannot be null"
+    );
+
+    organization.activate(eventId, activatedAt);
 
 
-                organizationRepository.save(organization);
+        organizationRepository.save(organization);
 
-        domainEventPublisher.publish(
-                organization.pullDomainEvents()
-        );
+    domainEventPublisher.publish(
+        organization.pullDomainEvents()
+    );
 
-        return new ActivateOrganizationResult(
-                organization.id().value(),
-                organization.tenantId().value(),
-                organization.status().name(),
-                activatedAt
-        );
-    }
+    return new ActivateOrganizationResult(
+        organization.id().value(),
+        organization.tenantId().value(),
+        organization.status().name(),
+        activatedAt
+    );
+  }
 }

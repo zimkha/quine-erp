@@ -33,511 +33,549 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(
-        replace = AutoConfigureTestDatabase.Replace.NONE
+    replace = AutoConfigureTestDatabase.Replace.NONE
 )
 @ImportAutoConfiguration(FlywayAutoConfiguration.class)
 public class OrganizationAggregatePersistenceIT extends OrganizationIntegrationTestSupport {
 
-    @Container
-    static final PostgreSQLContainer POSTGRES =
-            new PostgreSQLContainer("postgres:17-alpine")
-                    .withDatabaseName("quine")
-                    .withUsername("quine")
-                    .withPassword("quine");
+  @Container
+  static final PostgreSQLContainer POSTGRES =
+      new PostgreSQLContainer("postgres:17-alpine")
+          .withDatabaseName("quine")
+          .withUsername("quine")
+          .withPassword("quine");
 
-    @DynamicPropertySource
-    static void configurePostgres(
-            DynamicPropertyRegistry registry
-    ) {
-        registry.add(
-                "spring.datasource.url",
-                POSTGRES::getJdbcUrl
+  @DynamicPropertySource
+  static void configurePostgres(
+      DynamicPropertyRegistry registry
+  ) {
+    registry.add(
+        "spring.datasource.url",
+        POSTGRES::getJdbcUrl
+    );
+
+    registry.add(
+        "spring.datasource.username",
+        POSTGRES::getUsername
+    );
+
+    registry.add(
+        "spring.datasource.password",
+        POSTGRES::getPassword
+    );
+  }
+
+  @Autowired
+  EntityManager entityManager;
+
+  @Autowired
+  SpringDataOrganizationRepository springDataRepository;
+
+  OrganizationRepositoryAdapter repositoryAdapter;
+  private static final UUID ORGANIZATION_UUID =
+      UUID.fromString(
+          "5c80d578-83f7-4b44-b5f7-598530067a09"
+      );
+
+  private static final UUID TENANT_UUID =
+      UUID.fromString(
+          "2d3a7d37-ef2c-4794-b248-b08acf42eb38"
+      );
+
+  private static final UUID HEADQUARTERS_UUID =
+      UUID.fromString(
+          "4ee0d038-4617-435c-b7c8-48697d4cf909"
+      );
+
+  private static final Instant CREATED_AT =
+      Instant.parse("2026-08-01T10:00:00Z");
+
+  @BeforeEach
+  void setUp() {
+    repositoryAdapter =
+        new OrganizationRepositoryAdapter(
+            springDataRepository,
+            new OrganizationPersistenceMapper(),
+            entityManager
         );
+  }
 
-        registry.add(
-                "spring.datasource.username",
-                POSTGRES::getUsername
-        );
+  @Test
+  void shouldSaveAndReloadStores() {
+    Organization organization = Organization.register(
+        new OrganizationId(ORGANIZATION_UUID),
+        new TenantId(TENANT_UUID),
+        new OrganizationName("Quincaillerie Thiès"),
+        new LegalName("Quincaillerie Thiès SARL"),
+        CurrencyCode.xof(),
+        new StoreId(HEADQUARTERS_UUID),
+        new StoreCode("THIES-01"),
+        new StoreName("Magasin principal"),
+        UUID.randomUUID(),
+        CREATED_AT
+    );
 
-        registry.add(
-                "spring.datasource.password",
-                POSTGRES::getPassword
-        );
-    }
+    organization.clearDomainEvents();
 
-    @Autowired
-    EntityManager entityManager;
-
-    @Autowired
-    SpringDataOrganizationRepository springDataRepository;
-
-    OrganizationRepositoryAdapter repositoryAdapter;
-    private static final UUID ORGANIZATION_UUID =
+    StoreId secondaryStoreId =
+        new StoreId(
             UUID.fromString(
-                    "5c80d578-83f7-4b44-b5f7-598530067a09"
-            );
+                "86fd6eb4-23f6-4381-842e-e5d57def4a39"
+            )
+        );
 
-    private static final UUID TENANT_UUID =
+    Instant secondaryStoreCreatedAt =
+        Instant.parse("2026-08-02T10:00:00Z");
+
+    organization.activate(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-01T11:00:00Z")
+    );
+
+    organization.clearDomainEvents();
+
+    organization.addStore(
+        secondaryStoreId,
+        new StoreCode("DAKAR-01"),
+        new StoreName("Magasin Dakar"),
+        UUID.randomUUID(),
+        secondaryStoreCreatedAt
+    );
+
+    organization.clearDomainEvents();
+
+    repositoryAdapter.save(organization);
+
+    entityManager.flush();
+    entityManager.clear();
+
+    Organization reloaded = repositoryAdapter
+        .findById(
+            new OrganizationId(ORGANIZATION_UUID)
+        )
+        .orElseThrow();
+
+    assertThat(reloaded.stores())
+        .hasSize(2);
+
+    Store headquarters = reloaded.stores()
+        .stream()
+        .filter(Store::isHeadquarters)
+        .findFirst()
+        .orElseThrow();
+
+    assertThat(headquarters.id().value())
+        .isEqualTo(HEADQUARTERS_UUID);
+
+    assertThat(headquarters.code().value())
+        .isEqualTo("THIES-01");
+
+    assertThat(headquarters.name().value())
+        .isEqualTo("Magasin principal");
+
+    assertThat(headquarters.isActive())
+        .isTrue();
+
+    assertThat(headquarters.createdAt())
+        .isEqualTo(CREATED_AT);
+
+    Store secondaryStore = reloaded.stores()
+        .stream()
+        .filter(store ->
+            store.id().equals(secondaryStoreId)
+        )
+        .findFirst()
+        .orElseThrow();
+
+    assertThat(secondaryStore.code().value())
+        .isEqualTo("DAKAR-01");
+
+    assertThat(secondaryStore.name().value())
+        .isEqualTo("Magasin Dakar");
+
+    assertThat(secondaryStore.isHeadquarters())
+        .isFalse();
+
+    assertThat(secondaryStore.isActive())
+        .isTrue();
+
+    assertThat(secondaryStore.createdAt())
+        .isEqualTo(secondaryStoreCreatedAt);
+
+    assertThat(reloaded.domainEvents())
+        .isEmpty();
+  }
+
+  @Test
+  void shouldPersistNewStoreWhenUpdatingExistingOrganization() {
+    // Given
+    Organization organization = Organization.register(
+        new OrganizationId(ORGANIZATION_UUID),
+        new TenantId(TENANT_UUID),
+        new OrganizationName("Quincaillerie Thiès"),
+        new LegalName("Quincaillerie Thiès SARL"),
+        CurrencyCode.xof(),
+        new StoreId(HEADQUARTERS_UUID),
+        new StoreCode("THIES-01"),
+        new StoreName("Magasin principal"),
+        UUID.randomUUID(),
+        CREATED_AT
+    );
+
+    organization.clearDomainEvents();
+
+    repositoryAdapter.save(organization);
+
+    entityManager.flush();
+    entityManager.clear();
+
+    Organization persistedOrganization =
+        repositoryAdapter.findById(
+            new OrganizationId(ORGANIZATION_UUID)
+        ).orElseThrow();
+
+    persistedOrganization.activate(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-02T09:00:00Z")
+    );
+
+    persistedOrganization.clearDomainEvents();
+
+    StoreId secondaryStoreId =
+        new StoreId(
             UUID.fromString(
-                    "2d3a7d37-ef2c-4794-b248-b08acf42eb38"
-            );
+                "86fd6eb4-23f6-4381-842e-e5d57def4a39"
+            )
+        );
 
-    private static final UUID HEADQUARTERS_UUID =
+    Instant storeCreatedAt =
+        Instant.parse("2026-08-02T10:00:00Z");
+
+    persistedOrganization.addStore(
+        secondaryStoreId,
+        new StoreCode("DAKAR-01"),
+        new StoreName("Magasin Dakar"),
+        UUID.randomUUID(),
+        storeCreatedAt
+    );
+
+    persistedOrganization.clearDomainEvents();
+
+    // When
+    repositoryAdapter.save(persistedOrganization);
+
+    entityManager.flush();
+    entityManager.clear();
+
+    // Then
+    Organization reloaded =
+        repositoryAdapter.findById(
+            new OrganizationId(ORGANIZATION_UUID)
+        ).orElseThrow();
+
+    assertThat(reloaded.stores())
+        .hasSize(2);
+
+    Store addedStore = reloaded.stores()
+        .stream()
+        .filter(store ->
+            store.id().equals(secondaryStoreId)
+        )
+        .findFirst()
+        .orElseThrow();
+
+    assertThat(addedStore.code().value())
+        .isEqualTo("DAKAR-01");
+
+    assertThat(addedStore.name().value())
+        .isEqualTo("Magasin Dakar");
+
+    assertThat(addedStore.isHeadquarters())
+        .isFalse();
+
+    assertThat(addedStore.isActive())
+        .isTrue();
+
+    assertThat(addedStore.createdAt())
+        .isEqualTo(storeCreatedAt);
+  }
+  @Test
+  void shouldPersistHeadquartersChange() {
+    // Given
+    Organization organization = Organization.register(
+        new OrganizationId(ORGANIZATION_UUID),
+        new TenantId(TENANT_UUID),
+        new OrganizationName("Quincaillerie Thiès"),
+        new LegalName("Quincaillerie Thiès SARL"),
+        CurrencyCode.xof(),
+        new StoreId(HEADQUARTERS_UUID),
+        new StoreCode("THIES-01"),
+        new StoreName("Magasin principal"),
+        UUID.randomUUID(),
+        CREATED_AT
+    );
+
+    organization.clearDomainEvents();
+
+    organization.activate(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-01T11:00:00Z")
+    );
+
+    organization.clearDomainEvents();
+
+    StoreId secondaryStoreId =
+        new StoreId(
             UUID.fromString(
-                    "4ee0d038-4617-435c-b7c8-48697d4cf909"
-            );
-
-    private static final Instant CREATED_AT =
-            Instant.parse("2026-08-01T10:00:00Z");
-
-    @BeforeEach
-    void setUp() {
-        repositoryAdapter =
-                new OrganizationRepositoryAdapter(
-                        springDataRepository,
-                        new OrganizationPersistenceMapper()
-                );
-    }
-
-    @Test
-    void shouldSaveAndReloadStores() {
-        Organization organization = Organization.register(
-                new OrganizationId(ORGANIZATION_UUID),
-                new TenantId(TENANT_UUID),
-                new OrganizationName("Quincaillerie Thiès"),
-                new LegalName("Quincaillerie Thiès SARL"),
-                CurrencyCode.xof(),
-                new StoreId(HEADQUARTERS_UUID),
-                new StoreCode("THIES-01"),
-                new StoreName("Magasin principal"),
-                UUID.randomUUID(),
-                CREATED_AT
+                "86fd6eb4-23f6-4381-842e-e5d57def4a39"
+            )
         );
 
-        organization.clearDomainEvents();
+    organization.addStore(
+        secondaryStoreId,
+        new StoreCode("DAKAR-01"),
+        new StoreName("Magasin Dakar"),
+        UUID.randomUUID(),
+        Instant.parse("2026-08-02T10:00:00Z")
+    );
 
-        StoreId secondaryStoreId =
-                new StoreId(
-                        UUID.fromString(
-                                "86fd6eb4-23f6-4381-842e-e5d57def4a39"
-                        )
-                );
+    organization.clearDomainEvents();
 
-        Instant secondaryStoreCreatedAt =
-                Instant.parse("2026-08-02T10:00:00Z");
+    repositoryAdapter.save(organization);
 
-        organization.activate(
-                UUID.randomUUID(),
-                Instant.parse("2026-08-01T11:00:00Z")
+    entityManager.flush();
+    entityManager.clear();
+
+    Organization persisted =
+        repositoryAdapter.findById(
+            new OrganizationId(ORGANIZATION_UUID)
+        ).orElseThrow();
+
+    // When
+    persisted.changeHeadquarters(
+        secondaryStoreId,
+        UUID.randomUUID(),
+        Instant.parse("2026-08-03T10:00:00Z")
+    );
+
+    persisted.clearDomainEvents();
+
+    repositoryAdapter.save(persisted);
+
+    entityManager.flush();
+    entityManager.clear();
+
+    // Then
+    Organization reloaded =
+        repositoryAdapter.findById(
+            new OrganizationId(ORGANIZATION_UUID)
+        ).orElseThrow();
+
+    assertThat(reloaded.stores())
+        .hasSize(2);
+
+    Store currentHeadquarters = reloaded.stores()
+        .stream()
+        .filter(Store::isHeadquarters)
+        .findFirst()
+        .orElseThrow();
+
+    assertThat(currentHeadquarters.id())
+        .isEqualTo(secondaryStoreId);
+
+    Store oldHeadquarters = reloaded.stores()
+        .stream()
+        .filter(store ->
+            store.id().value()
+                .equals(HEADQUARTERS_UUID)
+        )
+        .findFirst()
+        .orElseThrow();
+
+    assertThat(oldHeadquarters.isHeadquarters())
+        .isFalse();
+
+    assertThat(currentHeadquarters.isActive())
+        .isTrue();
+
+    assertThat(oldHeadquarters.isActive())
+        .isTrue();
+
+    assertThat(reloaded.stores())
+        .filteredOn(Store::isHeadquarters)
+        .hasSize(1);
+  }
+  @Test
+  void shouldPersistStoreDeactivation() {
+    // Given
+    Organization organization =
+        activeOrganizationWithSecondaryStore();
+
+    repositoryAdapter.save(organization);
+    flushAndClear();
+
+    Organization persisted =
+        reloadOrganization();
+
+    StoreId secondaryStoreId =
+        new StoreId(SECONDARY_STORE_UUID);
+
+    // When
+    persisted.deactivateStore(
+        secondaryStoreId,
+        UUID.randomUUID(),
+        Instant.parse("2026-08-03T10:00:00Z")
+    );
+
+    persisted.clearDomainEvents();
+
+    repositoryAdapter.save(persisted);
+    flushAndClear();
+
+    // Then
+    Organization reloaded =
+        reloadOrganization();
+
+    Store secondaryStore = reloaded.stores()
+        .stream()
+        .filter(store ->
+            store.id().equals(secondaryStoreId)
+        )
+        .findFirst()
+        .orElseThrow();
+
+    assertThat(secondaryStore.isActive())
+        .isFalse();
+
+    assertThat(secondaryStore.isHeadquarters())
+        .isFalse();
+
+    assertThat(reloaded.stores())
+        .filteredOn(Store::isHeadquarters)
+        .singleElement()
+        .satisfies(headquarters ->
+            assertThat(headquarters.isActive())
+                .isTrue()
         );
 
-        organization.clearDomainEvents();
-
-        organization.addStore(
-                secondaryStoreId,
-                new StoreCode("DAKAR-01"),
-                new StoreName("Magasin Dakar"),
-                UUID.randomUUID(),
-                secondaryStoreCreatedAt
-        );
-
-        organization.clearDomainEvents();
-
-        repositoryAdapter.save(organization);
-
-        entityManager.flush();
-        entityManager.clear();
-
-        Organization reloaded = repositoryAdapter
-                .findById(
-                        new OrganizationId(ORGANIZATION_UUID)
-                )
-                .orElseThrow();
-
-        assertThat(reloaded.stores())
-                .hasSize(2);
-
-        Store headquarters = reloaded.stores()
-                .stream()
-                .filter(Store::isHeadquarters)
-                .findFirst()
-                .orElseThrow();
-
-        assertThat(headquarters.id().value())
-                .isEqualTo(HEADQUARTERS_UUID);
-
-        assertThat(headquarters.code().value())
-                .isEqualTo("THIES-01");
-
-        assertThat(headquarters.name().value())
-                .isEqualTo("Magasin principal");
-
-        assertThat(headquarters.isActive())
-                .isTrue();
-
-        assertThat(headquarters.createdAt())
-                .isEqualTo(CREATED_AT);
-
-        Store secondaryStore = reloaded.stores()
-                .stream()
-                .filter(store ->
-                        store.id().equals(secondaryStoreId)
-                )
-                .findFirst()
-                .orElseThrow();
-
-        assertThat(secondaryStore.code().value())
-                .isEqualTo("DAKAR-01");
-
-        assertThat(secondaryStore.name().value())
-                .isEqualTo("Magasin Dakar");
-
-        assertThat(secondaryStore.isHeadquarters())
-                .isFalse();
-
-        assertThat(secondaryStore.isActive())
-                .isTrue();
-
-        assertThat(secondaryStore.createdAt())
-                .isEqualTo(secondaryStoreCreatedAt);
-
-        assertThat(reloaded.domainEvents())
-                .isEmpty();
-    }
-
-    @Test
-    void shouldPersistNewStoreWhenUpdatingExistingOrganization() {
-        // Given
-        Organization organization = Organization.register(
-                new OrganizationId(ORGANIZATION_UUID),
-                new TenantId(TENANT_UUID),
-                new OrganizationName("Quincaillerie Thiès"),
-                new LegalName("Quincaillerie Thiès SARL"),
-                CurrencyCode.xof(),
-                new StoreId(HEADQUARTERS_UUID),
-                new StoreCode("THIES-01"),
-                new StoreName("Magasin principal"),
-                UUID.randomUUID(),
-                CREATED_AT
-        );
-
-        organization.clearDomainEvents();
-
-        repositoryAdapter.save(organization);
-
-        entityManager.flush();
-        entityManager.clear();
-
-        Organization persistedOrganization =
-                repositoryAdapter.findById(
-                        new OrganizationId(ORGANIZATION_UUID)
-                ).orElseThrow();
-
-        persistedOrganization.activate(
-                UUID.randomUUID(),
-                Instant.parse("2026-08-02T09:00:00Z")
-        );
-
-        persistedOrganization.clearDomainEvents();
-
-        StoreId secondaryStoreId =
-                new StoreId(
-                        UUID.fromString(
-                                "86fd6eb4-23f6-4381-842e-e5d57def4a39"
-                        )
-                );
-
-        Instant storeCreatedAt =
-                Instant.parse("2026-08-02T10:00:00Z");
-
-        persistedOrganization.addStore(
-                secondaryStoreId,
-                new StoreCode("DAKAR-01"),
-                new StoreName("Magasin Dakar"),
-                UUID.randomUUID(),
-                storeCreatedAt
-        );
-
-        persistedOrganization.clearDomainEvents();
-
-        // When
-        repositoryAdapter.save(persistedOrganization);
-
-        entityManager.flush();
-        entityManager.clear();
-
-        // Then
-        Organization reloaded =
-                repositoryAdapter.findById(
-                        new OrganizationId(ORGANIZATION_UUID)
-                ).orElseThrow();
-
-        assertThat(reloaded.stores())
-                .hasSize(2);
-
-        Store addedStore = reloaded.stores()
-                .stream()
-                .filter(store ->
-                        store.id().equals(secondaryStoreId)
-                )
-                .findFirst()
-                .orElseThrow();
-
-        assertThat(addedStore.code().value())
-                .isEqualTo("DAKAR-01");
-
-        assertThat(addedStore.name().value())
-                .isEqualTo("Magasin Dakar");
-
-        assertThat(addedStore.isHeadquarters())
-                .isFalse();
-
-        assertThat(addedStore.isActive())
-                .isTrue();
-
-        assertThat(addedStore.createdAt())
-                .isEqualTo(storeCreatedAt);
-    }
-    @Test
-    void shouldPersistHeadquartersChange() {
-        // Given
-        Organization organization = Organization.register(
-                new OrganizationId(ORGANIZATION_UUID),
-                new TenantId(TENANT_UUID),
-                new OrganizationName("Quincaillerie Thiès"),
-                new LegalName("Quincaillerie Thiès SARL"),
-                CurrencyCode.xof(),
-                new StoreId(HEADQUARTERS_UUID),
-                new StoreCode("THIES-01"),
-                new StoreName("Magasin principal"),
-                UUID.randomUUID(),
-                CREATED_AT
-        );
-
-        organization.clearDomainEvents();
-
-        organization.activate(
-                UUID.randomUUID(),
-                Instant.parse("2026-08-01T11:00:00Z")
-        );
-
-        organization.clearDomainEvents();
-
-        StoreId secondaryStoreId =
-                new StoreId(
-                        UUID.fromString(
-                                "86fd6eb4-23f6-4381-842e-e5d57def4a39"
-                        )
-                );
-
-        organization.addStore(
-                secondaryStoreId,
-                new StoreCode("DAKAR-01"),
-                new StoreName("Magasin Dakar"),
-                UUID.randomUUID(),
-                Instant.parse("2026-08-02T10:00:00Z")
-        );
-
-        organization.clearDomainEvents();
-
-        repositoryAdapter.save(organization);
-
-        entityManager.flush();
-        entityManager.clear();
-
-        Organization persisted =
-                repositoryAdapter.findById(
-                        new OrganizationId(ORGANIZATION_UUID)
-                ).orElseThrow();
-
-        // When
-        persisted.changeHeadquarters(
-                secondaryStoreId,
-                UUID.randomUUID(),
-                Instant.parse("2026-08-03T10:00:00Z")
-        );
-
-        persisted.clearDomainEvents();
-
-        repositoryAdapter.save(persisted);
-
-        entityManager.flush();
-        entityManager.clear();
-
-        // Then
-        Organization reloaded =
-                repositoryAdapter.findById(
-                        new OrganizationId(ORGANIZATION_UUID)
-                ).orElseThrow();
-
-        assertThat(reloaded.stores())
-                .hasSize(2);
-
-        Store currentHeadquarters = reloaded.stores()
-                .stream()
-                .filter(Store::isHeadquarters)
-                .findFirst()
-                .orElseThrow();
-
-        assertThat(currentHeadquarters.id())
-                .isEqualTo(secondaryStoreId);
-
-        Store oldHeadquarters = reloaded.stores()
-                .stream()
-                .filter(store ->
-                        store.id().value()
-                                .equals(HEADQUARTERS_UUID)
-                )
-                .findFirst()
-                .orElseThrow();
-
-        assertThat(oldHeadquarters.isHeadquarters())
-                .isFalse();
-
-        assertThat(currentHeadquarters.isActive())
-                .isTrue();
-
-        assertThat(oldHeadquarters.isActive())
-                .isTrue();
-
-        assertThat(reloaded.stores())
-                .filteredOn(Store::isHeadquarters)
-                .hasSize(1);
-    }
-    @Test
-    void shouldPersistStoreDeactivation() {
-        // Given
-        Organization organization =
-                activeOrganizationWithSecondaryStore();
-
-        repositoryAdapter.save(organization);
-        flushAndClear();
-
-        Organization persisted =
-                reloadOrganization();
-
-        StoreId secondaryStoreId =
-                new StoreId(SECONDARY_STORE_UUID);
-
-        // When
-        persisted.deactivateStore(
-                secondaryStoreId,
-                UUID.randomUUID(),
-                Instant.parse("2026-08-03T10:00:00Z")
-        );
-
-        persisted.clearDomainEvents();
-
-        repositoryAdapter.save(persisted);
-        flushAndClear();
-
-        // Then
-        Organization reloaded =
-                reloadOrganization();
-
-        Store secondaryStore = reloaded.stores()
-                .stream()
-                .filter(store ->
-                        store.id().equals(secondaryStoreId)
-                )
-                .findFirst()
-                .orElseThrow();
-
-        assertThat(secondaryStore.isActive())
-                .isFalse();
-
-        assertThat(secondaryStore.isHeadquarters())
-                .isFalse();
-
-        assertThat(reloaded.stores())
-                .filteredOn(Store::isHeadquarters)
-                .singleElement()
-                .satisfies(headquarters ->
-                        assertThat(headquarters.isActive())
-                                .isTrue()
-                );
-
-        assertThat(reloaded.domainEvents())
-                .isEmpty();
-    }
-
-    @Test
-    void shouldPersistOrganizationStatusChanges() {
-        // Given
-        Organization organization =
-                activeOrganization();
-
-        repositoryAdapter.save(organization);
-        flushAndClear();
-
-        Organization persisted =
-                reloadOrganization();
-
-        assertThat(persisted.status())
-                .isEqualTo(OrganizationStatus.ACTIVE);
-
-        // When
-        persisted.suspend();
-
-        persisted.clearDomainEvents();
-
-        repositoryAdapter.save(persisted);
-        flushAndClear();
-
-        // Then
-        Organization suspended =
-                reloadOrganization();
-
-        assertThat(suspended.status())
-                .isEqualTo(OrganizationStatus.SUSPENDED);
-
-        assertThat(suspended.domainEvents())
-                .isEmpty();
-    }
-
-    @Test
-    void shouldPersistClosedOrganization() {
-        // Given
-        Organization organization =
-                activeOrganization();
-
-        repositoryAdapter.save(organization);
-        flushAndClear();
-
-        Organization persisted =
-                reloadOrganization();
-
-        Instant closedAt =
-                Instant.parse("2026-08-04T10:00:00Z");
-
-        // When
-        persisted.close(
-                UUID.randomUUID(),
-                closedAt
-        );
-
-        persisted.clearDomainEvents();
-
-        repositoryAdapter.save(persisted);
-        flushAndClear();
-
-        // Then
-        Organization closed =
-                reloadOrganization();
-
-        assertThat(closed.status())
-                .isEqualTo(OrganizationStatus.CLOSED);
-
-        assertThat(closed.id())
-                .isEqualTo(persisted.id());
-
-        assertThat(closed.tenantId())
-                .isEqualTo(persisted.tenantId());
-
-        assertThat(closed.stores())
-                .hasSameSizeAs(persisted.stores());
-
-        assertThat(closed.domainEvents())
-                .isEmpty();
-    }
+    assertThat(reloaded.domainEvents())
+        .isEmpty();
+  }
+
+  @Test
+  void shouldPersistOrganizationStatusChanges() {
+    // Given
+    Organization organization =
+        activeOrganization();
+
+    repositoryAdapter.save(organization);
+    flushAndClear();
+
+    Organization persisted =
+        reloadOrganization();
+
+    assertThat(persisted.status())
+        .isEqualTo(OrganizationStatus.ACTIVE);
+
+    // When
+    persisted.suspend();
+
+    persisted.clearDomainEvents();
+
+    repositoryAdapter.save(persisted);
+    flushAndClear();
+
+    // Then
+    Organization suspended =
+        reloadOrganization();
+
+    assertThat(suspended.status())
+        .isEqualTo(OrganizationStatus.SUSPENDED);
+
+    assertThat(suspended.domainEvents())
+        .isEmpty();
+  }
+
+  @Test
+  void shouldPersistClosedOrganization() {
+    // Given
+    Organization organization =
+        activeOrganization();
+
+    repositoryAdapter.save(organization);
+    flushAndClear();
+
+    Organization persisted =
+        reloadOrganization();
+
+    Instant closedAt =
+        Instant.parse("2026-08-04T10:00:00Z");
+
+    // When
+    persisted.close(
+        UUID.randomUUID(),
+        closedAt
+    );
+
+    persisted.clearDomainEvents();
+
+    repositoryAdapter.save(persisted);
+    flushAndClear();
+
+    // Then
+    Organization closed =
+        reloadOrganization();
+
+    assertThat(closed.status())
+        .isEqualTo(OrganizationStatus.CLOSED);
+
+    assertThat(closed.id())
+        .isEqualTo(persisted.id());
+
+    assertThat(closed.tenantId())
+        .isEqualTo(persisted.tenantId());
+
+    assertThat(closed.stores())
+        .hasSameSizeAs(persisted.stores());
+
+    assertThat(closed.domainEvents())
+        .isEmpty();
+  }
+
+  @Test
+  void shouldSwitchHeadquartersBackToPreviousStore() {
+    // Given THIES-01 (headquarters) and DAKAR-01
+    repositoryAdapter.save(activeOrganizationWithSecondaryStore());
+    flushAndClear();
+
+    StoreId thies = new StoreId(HEADQUARTERS_UUID);
+    StoreId dakar = new StoreId(SECONDARY_STORE_UUID);
+
+    // When: THIES-01 -> DAKAR-01
+    Organization first = reloadOrganization();
+    first.changeHeadquarters(
+        dakar,
+        UUID.randomUUID(),
+        Instant.parse("2026-08-03T10:00:00Z")
+    );
+    repositoryAdapter.save(first);
+    flushAndClear();
+
+    // And: DAKAR-01 -> THIES-01 again
+    Organization second = reloadOrganization();
+    second.changeHeadquarters(
+        thies,
+        UUID.randomUUID(),
+        Instant.parse("2026-08-04T10:00:00Z")
+    );
+    repositoryAdapter.save(second);
+    flushAndClear();
+
+    // Then
+    assertThat(reloadOrganization().stores())
+        .filteredOn(Store::isHeadquarters)
+        .singleElement()
+        .extracting(Store::id)
+        .isEqualTo(thies);
+  }
 }
