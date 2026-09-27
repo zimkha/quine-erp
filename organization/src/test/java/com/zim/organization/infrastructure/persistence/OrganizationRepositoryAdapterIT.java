@@ -8,20 +8,11 @@ import com.zim.organization.domain.valueobject.*;
 import com.zim.organization.infrastructure.persistence.adapteur.OrganizationRepositoryAdapter;
 import com.zim.organization.infrastructure.persistence.mapper.OrganizationPersistenceMapper;
 import com.zim.organization.infrastructure.persistence.repository.SpringDataOrganizationRepository;
+import com.zim.organization.infrastructure.persistence.support.PostgresIntegrationTest;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
-import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
-import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration;
-import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -30,42 +21,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@DataJpaTest
-@Testcontainers
-@ActiveProfiles("test")
-@AutoConfigureTestDatabase(
-    replace = AutoConfigureTestDatabase.Replace.NONE
-)
-@ImportAutoConfiguration(FlywayAutoConfiguration.class)
-class OrganizationRepositoryAdapterIT {
-
-
-  @Container
-  static final PostgreSQLContainer POSTGRES =
-      new PostgreSQLContainer("postgres:17-alpine")
-          .withDatabaseName("quine")
-          .withUsername("quine")
-          .withPassword("quine");
-
-  @DynamicPropertySource
-  static void configurePostgres(
-      DynamicPropertyRegistry registry
-  ) {
-    registry.add(
-        "spring.datasource.url",
-        POSTGRES::getJdbcUrl
-    );
-
-    registry.add(
-        "spring.datasource.username",
-        POSTGRES::getUsername
-    );
-
-    registry.add(
-        "spring.datasource.password",
-        POSTGRES::getPassword
-    );
-  }
+class OrganizationRepositoryAdapterIT
+    extends PostgresIntegrationTest {
 
   @Autowired
   EntityManager entityManager;

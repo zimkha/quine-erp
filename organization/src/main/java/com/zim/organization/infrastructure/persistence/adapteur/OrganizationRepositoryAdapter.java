@@ -24,6 +24,11 @@ import java.util.Optional;
  *
  * <p>{@link #save(Organization)} must run inside a transaction that also
  * covers the preceding load (see {@code OrganizationConfiguration}).
+ *
+ * <p>Call {@link #save(Organization)} at most once per aggregate per
+ * transaction: each update forces a version increment and checks the
+ * aggregate's loaded version, which a second save of the same instance no
+ * longer matches, so it fails as an optimistic locking conflict.
  */
 public final class OrganizationRepositoryAdapter
     implements OrganizationRepository {

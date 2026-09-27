@@ -53,7 +53,10 @@ public final class Organization  extends AggregateRoot {
         name,
         "Organization name cannot be null"
     );
-    this.legalName = legalName;
+    this.legalName = Objects.requireNonNull(
+        legalName,
+        "Legal name cannot be null"
+    );
     this.currency = Objects.requireNonNull(
         currency,
         "Currency cannot be null"
@@ -143,9 +146,27 @@ public final class Organization  extends AggregateRoot {
     );
   }
 
-  public void suspend() {
-    ensureStatus(OrganizationStatus.ACTIVE);
+  public void suspend(UUID eventId, Instant occurredAt) {
+    Objects.requireNonNull(eventId, "Event id cannot be null");
+    Objects.requireNonNull(
+        occurredAt,
+        "Occurred at cannot be null"
+    );
+
+    checkRule(
+        new OrganizationMustBeActiveToBeSuspendedRule(status)
+    );
+
     status = OrganizationStatus.SUSPENDED;
+
+    registerEvent(
+        new OrganizationSuspended(
+            eventId,
+            id,
+            tenantId,
+            occurredAt
+        )
+    );
   }
 
   public void close(
@@ -198,15 +219,9 @@ public final class Organization  extends AggregateRoot {
         new StoreCodeMustBeUniqueRule(stores, storeCode)
     );
 
-    boolean duplicateId = stores.stream()
-        .anyMatch(store -> store.id().equals(storeId));
-
-    if (duplicateId) {
-      throw new IllegalArgumentException(
-          "A store with id '%s' already exists"
-              .formatted(storeId)
-      );
-    }
+    checkRule(
+        new StoreIdMustBeUniqueRule(stores, storeId)
+    );
 
     stores.add(
         Store.create(
@@ -381,15 +396,6 @@ public final class Organization  extends AggregateRoot {
     if (status == OrganizationStatus.CLOSED) {
       throw new IllegalStateException(
           "Closed organization cannot be modified"
-      );
-    }
-  }
-
-  private void ensureStatus(OrganizationStatus expectedStatus) {
-    if (status != expectedStatus) {
-      throw new IllegalStateException(
-          "Expected organization status " + expectedStatus
-              + " but was " + status
       );
     }
   }

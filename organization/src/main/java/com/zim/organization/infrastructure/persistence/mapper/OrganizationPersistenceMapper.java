@@ -103,6 +103,19 @@ public final class OrganizationPersistenceMapper {
   /**
    * Copies the mutable state of the aggregate onto its managed entity:
    * status, existing stores, and stores added since it was loaded.
+   *
+   * <p>Limitations:
+   * <ul>
+   *   <li>Stores removed from the aggregate are not removed from the
+   *       entity (no orphan handling); the domain never removes stores
+   *       today.</li>
+   *   <li>Hibernate flushes INSERTs before UPDATEs, so a store added in
+   *       this save cannot reuse a code that an existing store gives up in
+   *       the same save, nor take a unique flag from an existing row that
+   *       is only cleared by an UPDATE. The headquarters case is covered by
+   *       {@link #releaseFormerHeadquarters}, which the adapter flushes
+   *       before calling this method.</li>
+   * </ul>
    */
   public void copyState(
       Organization source,

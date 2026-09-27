@@ -273,7 +273,7 @@ class CloseOrganizationHandlerTest {
     private static Organization suspendedOrganization() {
         Organization organization = activeOrganization();
 
-        organization.suspend();
+        organization.suspend(UUID.randomUUID(), SUSPENDED_AT);
 
         organization.clearDomainEvents();
 
