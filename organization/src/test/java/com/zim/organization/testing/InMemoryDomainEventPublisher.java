@@ -9,15 +9,15 @@ import java.util.List;
 
 public  final class InMemoryDomainEventPublisher implements DomainEventPublisher {
 
-    private final List<DomainEvent> publishedEvents =
-            new ArrayList<>();
+  private final List<DomainEvent> publishedEvents =
+      new ArrayList<>();
 
-    public void publish(Collection<DomainEvent> events) {
-        publishedEvents.addAll(events);
-    }
+  public void publish(Collection<DomainEvent> events) {
+    publishedEvents.addAll(events);
+  }
 
-    public List<DomainEvent> publishedEvents() {
-        return List.copyOf(publishedEvents);
-    }
+  public List<DomainEvent> publishedEvents() {
+    return List.copyOf(publishedEvents);
+  }
 
 }

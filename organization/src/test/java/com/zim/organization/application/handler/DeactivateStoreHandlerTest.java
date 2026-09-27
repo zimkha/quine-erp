@@ -1,7 +1,6 @@
 package com.zim.organization.application.handler;
 
 import com.zim.organization.application.command.DeactivateStoreCommand;
-import com.zim.organization.application.exception.OrganizationNotFoundException;
 import com.zim.organization.application.result.DeactivateStoreResult;
 
 import com.zim.organization.domain.event.StoreDeactivated;
@@ -12,146 +11,149 @@ import com.zim.shared.domain.TenantId;
 import com.zim.organization.testing.InMemoryDomainEventPublisher;
 import com.zim.organization.testing.InMemoryOrganizationRepository;
 import com.zim.shared.domain.BusinessRuleViolationException;
-import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.UUID;
 
+import static com.zim.organization.testing.OrganizationAssertions.assertOrganizationNotFound;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class DeactivateStoreHandlerTest {
 
-    private static final UUID ORGANIZATION_UUID =
-            UUID.fromString(
-                    "5c80d578-83f7-4b44-b5f7-598530067a09"
-            );
+  private static final UUID ORGANIZATION_UUID =
+      UUID.fromString(
+          "5c80d578-83f7-4b44-b5f7-598530067a09"
+      );
 
-    private static final UUID TENANT_UUID =
-            UUID.fromString(
-                    "2d3a7d37-ef2c-4794-b248-b08acf42eb38"
-            );
+  private static final UUID TENANT_UUID =
+      UUID.fromString(
+          "2d3a7d37-ef2c-4794-b248-b08acf42eb38"
+      );
 
   private static final UUID OTHER_TENANT_UUID =
       UUID.fromString("9a4c2e71-5b3d-4f8a-b6c1-0d2e4f6a8b13");
 
-    private static final UUID HEADQUARTERS_UUID =
-            UUID.fromString(
-                    "4ee0d038-4617-435c-b7c8-48697d4cf909"
-            );
+  private static final UUID HEADQUARTERS_UUID =
+      UUID.fromString(
+          "4ee0d038-4617-435c-b7c8-48697d4cf909"
+      );
 
-    private static final UUID SECONDARY_STORE_UUID =
-            UUID.fromString(
-                    "86fd6eb4-23f6-4381-842e-e5d57def4a39"
-            );
+  private static final UUID SECONDARY_STORE_UUID =
+      UUID.fromString(
+          "86fd6eb4-23f6-4381-842e-e5d57def4a39"
+      );
 
-    private static final UUID EVENT_UUID =
-            UUID.fromString(
-                    "4bd292f0-d945-43dd-982c-ddd6b966bf17"
-            );
+  private static final UUID EVENT_UUID =
+      UUID.fromString(
+          "4bd292f0-d945-43dd-982c-ddd6b966bf17"
+      );
 
-    private static final Instant CREATED_AT =
-            Instant.parse("2026-08-01T10:00:00Z");
+  private static final Instant CREATED_AT =
+      Instant.parse("2026-08-01T10:00:00Z");
 
-    private static final Instant DEACTIVATED_AT =
-            Instant.parse("2026-08-02T12:00:00Z");
+  private static final Instant DEACTIVATED_AT =
+      Instant.parse("2026-08-02T12:00:00Z");
 
-    private InMemoryOrganizationRepository repository;
-    private InMemoryDomainEventPublisher publisher;
-    private DeactivateStoreHandler handler;
+  private InMemoryOrganizationRepository repository;
+  private InMemoryDomainEventPublisher publisher;
+  private DeactivateStoreHandler handler;
 
-    @BeforeEach
-    void setUp() {
-        repository = new InMemoryOrganizationRepository();
-        publisher = new InMemoryDomainEventPublisher();
+  @BeforeEach
+  void setUp() {
+    repository = new InMemoryOrganizationRepository();
+    publisher = new InMemoryDomainEventPublisher();
 
-        handler = new DeactivateStoreHandler(
-                repository,
-                () -> EVENT_UUID,
-                () -> DEACTIVATED_AT,
-                publisher
-        );
-    }
+    handler = new DeactivateStoreHandler(
+        repository,
+        () -> EVENT_UUID,
+        () -> DEACTIVATED_AT,
+        publisher
+    );
+  }
 
-    @Test
-    void shouldDeactivateSecondaryStore() {
-        Organization organization =
-                activeOrganizationWithSecondaryStore();
+  @Test
+  void shouldDeactivateSecondaryStore() {
+    Organization organization =
+        activeOrganizationWithSecondaryStore();
 
-        repository.add(organization);
+    repository.add(organization);
 
-        DeactivateStoreResult result = handler.handle(
-                new DeactivateStoreCommand(
-                        new TenantId(TENANT_UUID),
-                        ORGANIZATION_UUID,
-                        SECONDARY_STORE_UUID
-                )
-        );
+    DeactivateStoreResult result = handler.handle(
+        new DeactivateStoreCommand(
+            new TenantId(TENANT_UUID),
+            ORGANIZATION_UUID,
+            SECONDARY_STORE_UUID
+        )
+    );
 
-        assertThat(result.organizationId())
-                .isEqualTo(ORGANIZATION_UUID);
+    assertThat(result.organizationId())
+        .isEqualTo(ORGANIZATION_UUID);
 
-        assertThat(result.storeId())
-                .isEqualTo(SECONDARY_STORE_UUID);
+    assertThat(result.storeId())
+        .isEqualTo(SECONDARY_STORE_UUID);
 
-        assertThat(result.active()).isFalse();
+    assertThat(result.active()).isFalse();
 
-        assertThat(result.deactivatedAt())
-                .isEqualTo(DEACTIVATED_AT);
+    assertThat(result.deactivatedAt())
+        .isEqualTo(DEACTIVATED_AT);
 
-        Store savedStore = repository
-                .findById(new TenantId(TENANT_UUID), new OrganizationId(ORGANIZATION_UUID))
-                .orElseThrow()
-                .stores()
-                .stream()
-                .filter(store ->
-                        store.id().value()
-                                .equals(SECONDARY_STORE_UUID)
-                )
-                .findFirst()
-                .orElseThrow();
+    Store savedStore = repository
+        .findById(
+            new TenantId(TENANT_UUID),
+            new OrganizationId(ORGANIZATION_UUID)
+        )
+        .orElseThrow()
+        .stores()
+        .stream()
+        .filter(store ->
+            store.id().value()
+                .equals(SECONDARY_STORE_UUID)
+        )
+        .findFirst()
+        .orElseThrow();
 
-        assertThat(savedStore.isActive()).isFalse();
-    }
+    assertThat(savedStore.isActive()).isFalse();
+  }
 
-    @Test
-    void shouldPublishStoreDeactivatedEvent() {
-        Organization organization =
-                activeOrganizationWithSecondaryStore();
+  @Test
+  void shouldPublishStoreDeactivatedEvent() {
+    Organization organization =
+        activeOrganizationWithSecondaryStore();
 
-        repository.add(organization);
+    repository.add(organization);
 
-        handler.handle(
-                new DeactivateStoreCommand(
-                        new TenantId(TENANT_UUID),
-                        ORGANIZATION_UUID,
-                        SECONDARY_STORE_UUID
-                )
-        );
+    handler.handle(
+        new DeactivateStoreCommand(
+            new TenantId(TENANT_UUID),
+            ORGANIZATION_UUID,
+            SECONDARY_STORE_UUID
+        )
+    );
 
-        assertThat(publisher.publishedEvents())
-                .singleElement()
-                .isInstanceOf(StoreDeactivated.class);
+    assertThat(publisher.publishedEvents())
+        .singleElement()
+        .isInstanceOf(StoreDeactivated.class);
 
-        StoreDeactivated event = (StoreDeactivated)
-                publisher.publishedEvents().getFirst();
+    StoreDeactivated event = (StoreDeactivated)
+        publisher.publishedEvents().getFirst();
 
-        assertThat(event.eventId()).isEqualTo(EVENT_UUID);
+    assertThat(event.eventId()).isEqualTo(EVENT_UUID);
 
-        assertThat(event.organizationId().value())
-                .isEqualTo(ORGANIZATION_UUID);
+    assertThat(event.organizationId().value())
+        .isEqualTo(ORGANIZATION_UUID);
 
-        assertThat(event.tenantId().value())
-                .isEqualTo(TENANT_UUID);
+    assertThat(event.tenantId().value())
+        .isEqualTo(TENANT_UUID);
 
-        assertThat(event.storeId().value())
-                .isEqualTo(SECONDARY_STORE_UUID);
+    assertThat(event.storeId().value())
+        .isEqualTo(SECONDARY_STORE_UUID);
 
-        assertThat(event.occurredAt())
-                .isEqualTo(DEACTIVATED_AT);
-    }
+    assertThat(event.occurredAt())
+        .isEqualTo(DEACTIVATED_AT);
+  }
 
   @Test
   void shouldRejectUnknownOrganization() {
@@ -161,80 +163,80 @@ class DeactivateStoreHandlerTest {
             ORGANIZATION_UUID,
             SECONDARY_STORE_UUID
         )
-    ));
+    ), ORGANIZATION_UUID, repository, publisher);
   }
 
-    @Test
-    void shouldRejectUnknownStore() {
-        Organization organization =
-                activeOrganizationWithSecondaryStore();
+  @Test
+  void shouldRejectUnknownStore() {
+    Organization organization =
+        activeOrganizationWithSecondaryStore();
 
-        repository.add(organization);
+    repository.add(organization);
 
-        UUID unknownStoreId = UUID.fromString(
-                "ff76e82a-1665-4259-ab44-65d75fd165f0"
-        );
+    UUID unknownStoreId = UUID.fromString(
+        "ff76e82a-1665-4259-ab44-65d75fd165f0"
+    );
 
-        assertThatThrownBy(() -> handler.handle(
-                new DeactivateStoreCommand(
-                        new TenantId(TENANT_UUID),
-                        ORGANIZATION_UUID,
-                        unknownStoreId
-                )
-        ))
-                .isInstanceOf(
-                        BusinessRuleViolationException.class
-                )
-                .satisfies(throwable -> {
-                    BusinessRuleViolationException exception =
-                            (BusinessRuleViolationException) throwable;
+    assertThatThrownBy(() -> handler.handle(
+        new DeactivateStoreCommand(
+            new TenantId(TENANT_UUID),
+            ORGANIZATION_UUID,
+            unknownStoreId
+        )
+    ))
+        .isInstanceOf(
+            BusinessRuleViolationException.class
+        )
+        .satisfies(throwable -> {
+          BusinessRuleViolationException exception =
+              (BusinessRuleViolationException) throwable;
 
-                    assertThat(exception.code())
-                            .isEqualTo(
-                                    "STORE_DOES_NOT_BELONG_TO_ORGANIZATION"
-                            );
-                });
+          assertThat(exception.code())
+              .isEqualTo(
+                  "STORE_DOES_NOT_BELONG_TO_ORGANIZATION"
+              );
+        });
 
-        assertThat(publisher.publishedEvents()).isEmpty();
-    }
+    assertThat(publisher.publishedEvents()).isEmpty();
+  }
 
-    @Test
-    void shouldRejectHeadquartersDeactivation() {
-        Organization organization =
-                activeOrganizationWithSecondaryStore();
+  @Test
+  void shouldRejectHeadquartersDeactivation() {
+    Organization organization =
+        activeOrganizationWithSecondaryStore();
 
-        repository.add(organization);
+    repository.add(organization);
 
-        assertThatThrownBy(() -> handler.handle(
-                new DeactivateStoreCommand(
-                        new TenantId(TENANT_UUID),
-                        ORGANIZATION_UUID,
-                        HEADQUARTERS_UUID
-                )
-        ))
-                .isInstanceOf(
-                        BusinessRuleViolationException.class
-                )
-                .satisfies(throwable -> {
-                    BusinessRuleViolationException exception =
-                            (BusinessRuleViolationException) throwable;
+    assertThatThrownBy(() -> handler.handle(
+        new DeactivateStoreCommand(
+            new TenantId(TENANT_UUID),
+            ORGANIZATION_UUID,
+            HEADQUARTERS_UUID
+        )
+    ))
+        .isInstanceOf(
+            BusinessRuleViolationException.class
+        )
+        .satisfies(throwable -> {
+          BusinessRuleViolationException exception =
+              (BusinessRuleViolationException) throwable;
 
-                    assertThat(exception.code())
-                            .isEqualTo(
-                                    "HEADQUARTERS_CANNOT_BE_DEACTIVATED"
-                            );
-                });
+          assertThat(exception.code())
+              .isEqualTo(
+                  "HEADQUARTERS_CANNOT_BE_DEACTIVATED"
+              );
+        });
 
-        assertThat(publisher.publishedEvents()).isEmpty();
+    assertThat(publisher.publishedEvents()).isEmpty();
 
-        Store headquarters = organization.stores()
-                .stream()
-                .filter(Store::isHeadquarters)
-                .findFirst()
-                .orElseThrow();
+    Store headquarters = organization.stores()
+        .stream()
+        .filter(Store::isHeadquarters)
+        .findFirst()
+        .orElseThrow();
 
-        assertThat(headquarters.isActive()).isTrue();
-    }
+    assertThat(headquarters.isActive()).isTrue();
+  }
 
   @Test
   void shouldNotDeactivateStoreOfOrganizationOwnedByAnotherTenant() {
@@ -248,7 +250,7 @@ class DeactivateStoreHandlerTest {
             ORGANIZATION_UUID,
             SECONDARY_STORE_UUID
         )
-    ));
+    ), ORGANIZATION_UUID, repository, publisher);
 
     assertThat(organization.stores())
         .hasSize(2)
@@ -269,7 +271,7 @@ class DeactivateStoreHandlerTest {
             ORGANIZATION_UUID,
             HEADQUARTERS_UUID
         )
-    ));
+    ), ORGANIZATION_UUID, repository, publisher);
 
     assertThat(organization.stores())
         .filteredOn(Store::isHeadquarters)
@@ -280,64 +282,39 @@ class DeactivateStoreHandlerTest {
         });
   }
 
-  /**
-   * Another tenant's organization must be reported exactly like a missing
-   * one: same exception, code and message, and no side effect.
-   */
-  private void assertOrganizationNotFound(ThrowingCallable call) {
-    assertThatThrownBy(call)
-        .isInstanceOfSatisfying(
-            OrganizationNotFoundException.class,
-            exception -> {
-              assertThat(exception.code())
-                  .isEqualTo("ORGANIZATION_NOT_FOUND");
-              assertThat(exception.organizationId())
-                  .isEqualTo(ORGANIZATION_UUID);
-              assertThat(exception.getMessage())
-                  .isEqualTo(
-                      new OrganizationNotFoundException(ORGANIZATION_UUID)
-                          .getMessage()
-                  );
-            }
-        );
+  private static Organization activeOrganizationWithSecondaryStore() {
+    Organization organization = Organization.register(
+        new OrganizationId(ORGANIZATION_UUID),
+        new TenantId(TENANT_UUID),
+        new OrganizationName("Quincaillerie Thiès"),
+        new LegalName("QUINCAILLERIE THIÈS SARL"),
+        CurrencyCode.xof(),
+        new StoreId(HEADQUARTERS_UUID),
+        new StoreCode("THIES-01"),
+        new StoreName("Magasin principal"),
+        UUID.randomUUID(),
+        CREATED_AT
+    );
 
-    assertThat(repository.saveCount()).isZero();
-    assertThat(publisher.publishedEvents()).isEmpty();
+    organization.clearDomainEvents();
+
+    organization.activate(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-01T11:00:00Z")
+    );
+
+    organization.clearDomainEvents();
+
+    organization.addStore(
+        new StoreId(SECONDARY_STORE_UUID),
+        new StoreCode("DAKAR-01"),
+        new StoreName("Magasin Dakar"),
+        UUID.randomUUID(),
+        Instant.parse("2026-08-01T12:00:00Z")
+    );
+
+    organization.clearDomainEvents();
+
+    return organization;
   }
-
-    private static Organization activeOrganizationWithSecondaryStore() {
-        Organization organization = Organization.register(
-                new OrganizationId(ORGANIZATION_UUID),
-                new TenantId(TENANT_UUID),
-                new OrganizationName("Quincaillerie Thiès"),
-                new LegalName("QUINCAILLERIE THIÈS SARL"),
-                CurrencyCode.xof(),
-                new StoreId(HEADQUARTERS_UUID),
-                new StoreCode("THIES-01"),
-                new StoreName("Magasin principal"),
-                UUID.randomUUID(),
-                CREATED_AT
-        );
-
-        organization.clearDomainEvents();
-
-        organization.activate(
-                UUID.randomUUID(),
-                Instant.parse("2026-08-01T11:00:00Z")
-        );
-
-        organization.clearDomainEvents();
-
-        organization.addStore(
-                new StoreId(SECONDARY_STORE_UUID),
-                new StoreCode("DAKAR-01"),
-                new StoreName("Magasin Dakar"),
-                UUID.randomUUID(),
-                Instant.parse("2026-08-01T12:00:00Z")
-        );
-
-        organization.clearDomainEvents();
-
-        return organization;
-    }
 }

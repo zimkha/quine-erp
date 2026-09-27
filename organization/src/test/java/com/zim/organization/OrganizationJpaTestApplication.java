@@ -8,12 +8,12 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
 @EnableAutoConfiguration
 @EntityScan(
-        basePackages =
-                "com.zim.organization.infrastructure.persistence.entity"
+    basePackages =
+        "com.zim.organization.infrastructure.persistence.entity"
 )
 @EnableJpaRepositories(
-        basePackages =
-                "com.zim.organization.infrastructure.persistence.repository"
+    basePackages =
+        "com.zim.organization.infrastructure.persistence.repository"
 )
 public class OrganizationJpaTestApplication {
 }

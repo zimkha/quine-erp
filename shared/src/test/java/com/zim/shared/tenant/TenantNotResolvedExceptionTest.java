@@ -25,6 +25,16 @@ class TenantNotResolvedExceptionTest {
   }
 
   @Test
+  void shouldKeepCauseWithGenericMessage() {
+    IllegalArgumentException cause =
+        new IllegalArgumentException("malformed tenant claim: abc");
+
+    assertThat(new TenantNotResolvedException(cause))
+        .hasMessage("The tenant of the current request could not be resolved")
+        .hasCause(cause);
+  }
+
+  @Test
   void shouldNotBeDomainException() {
     assertThat(new TenantNotResolvedException())
         .isInstanceOf(RuntimeException.class)
