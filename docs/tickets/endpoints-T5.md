@@ -2,8 +2,8 @@
 
 - **Status:** written by the BA against `main` at `c035c0d`, after T1–T4 were merged, and validated by the Architect. The Architect's changes are already applied to the ticket text below.
   - T5a, T5b and T5c are validated with changes.
-  - T5d is validated with changes, but **must not merge until product-owner decision 2 is answered**.
-  - T5e is **blocked**.
+  - T5d is validated with changes. **Its merge blockers are resolved** (product owner, 2026-09-28: the tenant closes, and no confirmation is needed).
+  - T5e is **blocked** on product-owner decision 2. Its domain prerequisite, T5e-0 (`docs/tickets/domain-activate-reinstate-split.md`), is validated.
 - **Source:** the "Later tickets" section of `docs/tickets/tenant-scoping-T1-T4.md`.
 - **Workflow:** BA → Architect → Developer → Lead Developer (see `CLAUDE.md`).
 
@@ -37,7 +37,7 @@
 |---|---|---|
 | 1 | Response shape | **One response DTO per result** in `presentation/rest/response`, mapped field for field like `RegisterOrganizationResponse`. Returning the full organization needs a read model that doesn't exist. A 204 would lose `storeId` and the timestamps, and the client has no GET endpoint to recover them. |
 | 2 | `Location` and 201 on add store | **201 with the body, and no `Location` on any endpoint.** A `Location` pointing at a URL that returns 404 or 405 is misleading, and the body already carries `storeId`. `Location` is added to register and add store together once a GET endpoint exists. |
-| 3 | Idempotency of repeated actions | **Keep the domain's 409 "already" codes on every T5 endpoint, and keep `PUT /headquarters`.** HTTP idempotency is about the effect on the server, not the status code. A client retrying after a timeout treats `STORE_IS_ALREADY_HEADQUARTERS`, `STORE_ALREADY_INACTIVE`, `ORGANIZATION_ALREADY_CLOSED` and `ORGANIZATION_CANNOT_BE_ACTIVATED` as "target state already reached". Silent no-ops would be a separate domain ticket. |
+| 3 | Idempotency of repeated actions | **Keep the domain's 409 "already" codes on every T5 endpoint, and keep `PUT /headquarters`.** HTTP idempotency is about the effect on the server, not the status code. A client retrying after a timeout treats `STORE_IS_ALREADY_HEADQUARTERS`, `STORE_ALREADY_INACTIVE`, `ORGANIZATION_ALREADY_CLOSED` and `ORGANIZATION_ALREADY_ACTIVE` as "target state already reached". `…_CANNOT_BE_…` codes are never success: they mean the action is refused from the current status. *(Corrected 2026-09-28 in T5e-0: `ORGANIZATION_CANNOT_BE_ACTIVATED` had been listed by mistake, since it was already returned for `CLOSED`.)* Silent no-ops would be a separate domain ticket. |
 | 4 | Moving the register-driven mapping tests | **Confirmed.** Three tests move to `TenantOrganizationControllerTest`, driven through add store: `…NotFound…`, `…BusinessRuleIsViolated` and `…ConcurrentModification`. The identical-404 test is rewritten with the real `AddStoreHandler`. `…DataIntegrityViolation` stays on register, which can really raise it (the legal-name race). |
 | 5 | 400 vs 401 precedence | **400 before 401 for now (Spring's natural order).** It reveals no tenant data. Revisit in T7, when a security filter authenticates before validation. |
 | 6 | Where the provider comes from at runtime | **T5 waits for neither `bootstrap` nor T7.** The "make `bootstrap` runnable" ticket **must** include the fail-closed `CurrentTenantProvider` bean, because the context won't start without one once a controller injects it. Every tenant-scoped endpoint answers 401 until T7. |
@@ -47,11 +47,11 @@
 | 9 | T5b: unknown store id, and `previousHeadquartersId` | **Keep 409 `STORE_DOES_NOT_BELONG_TO_ORGANIZATION`** on T5b and T5c. Ownership is already proven, so nothing leaks. **No `previousHeadquartersId`.** |
 | 10 | T5c: 200 or 204 | **200 with a body** (decision 1). |
 | 11a | Echo `tenantId` on close and activate | **No.** Only register keeps `tenantId`, because that's where the tenant is created. |
-| 11b | T5d: build now, merge after decision 2 | **Agreed.** The confirmation question (retyping the legal name) must also be answered before merge, because it would change the request. |
-| 12 | T5e | **Blocked.** See the domain split in T5e. |
+| 11b | T5d: build now, merge after decision 2 | **Agreed.** The confirmation question (retyping the legal name) must also be answered before merge, because it would change the request. **Resolved 2026-09-28:** the tenant closes, and no confirmation is needed. |
+| 12 | T5e | **Blocked on decision 2.** Domain prerequisite: T5e-0 (`activate()` only from `PENDING_ACTIVATION`, a new `reinstate()` for `SUSPENDED`, `ORGANIZATION_ALREADY_ACTIVE` for repeats). The Reinstate and Suspend commands and handlers come with their actor in the suspension-lifecycle ticket or T9. |
 
 **Other Architect notes:**
-- `OrganizationCannotBeClosedTwiceRule` is dead code, because `OrganizationMustBeClosableRule` produces `ORGANIZATION_ALREADY_CLOSED`. Flag it for a cleanup ticket.
+- `OrganizationCannotBeClosedTwiceRule` was dead code. It is removed in T5e-0.
 - `SUSPENDED` can't be reached today, because nothing calls `suspend()`. Tests that need it seed it through the aggregate: `register` → `activate` → `suspend` → `repository.save`.
 - Out of scope, as a known follow-up: 405 and 415 still use Spring's default error body, not `ApiErrorResponse`.
 
@@ -86,12 +86,14 @@
 - To another tenant, an organization it doesn't own is indistinguishable from a missing one. A 409 is never returned for another tenant's organization.
 
 **Conventions:**
-- **Repeated actions:** a repeat returns its 409 "already" code. Clients treat `STORE_IS_ALREADY_HEADQUARTERS`, `STORE_ALREADY_INACTIVE`, `ORGANIZATION_ALREADY_CLOSED` and `ORGANIZATION_CANNOT_BE_ACTIVATED` as "target state already reached". No T5 endpoint is a silent no-op.
+- **Repeated actions:** a repeat returns its 409 "already" code. Clients treat `STORE_IS_ALREADY_HEADQUARTERS`, `STORE_ALREADY_INACTIVE`, `ORGANIZATION_ALREADY_CLOSED` and `ORGANIZATION_ALREADY_ACTIVE` as "target state already reached". `…_CANNOT_BE_…` codes (e.g. `ORGANIZATION_CANNOT_BE_CLOSED`, `ORGANIZATION_CANNOT_BE_ACTIVATED`) mean the action is refused from the current status, and must not be treated as success. No T5 endpoint is a silent no-op.
 - **No `tenantId` in responses:** no T5 response echoes it.
 - **Controllers:** tenant-scoped endpoints live in `TenantOrganizationController` (`presentation.rest`). `OrganizationController` keeps register only and doesn't inject `CurrentTenantProvider`.
 - **Out of scope:** mapping 405 and 415 into `ApiErrorResponse`.
 
 **Product-owner decisions 1, 3 and 4** don't affect T5a–d. Decision 2 is covered in T5d and T5e.
+
+**Product-owner decisions recorded 2026-09-28:** the **tenant closes** its organization (decision 2, closing half), and closing needs **no confirmation step**. Who activates, suspends and reinstates is still open.
 
 ---
 
@@ -290,7 +292,7 @@
 
 ## T5d: Close my organization
 
-**User story (valid only if decision 2 = "the tenant closes").** As a tenant, I want to close my organization when I stop trading, so that no further changes can be made to it.
+**User story** (the product owner confirmed on 2026-09-28 that the tenant closes). As a tenant, I want to close my organization when I stop trading, so that no further changes can be made to it.
 
 **Scope:**
 - `POST /api/organizations/{id}/closure` → `CloseOrganizationCommand(tenant, id)`.
@@ -327,14 +329,14 @@
 
 **Dependencies:**
 - T5a
-- **Product-owner decision 2**
+- ~~Product-owner decision 2~~ (resolved 2026-09-28: the tenant closes)
 
-**What changes depending on decision 2:**
-- **Tenant closes:** build the ticket as written.
-- **Platform closes:** cancel T5d, and closing moves to T9.
-- **Both:** build T5d, and add T9 for the platform.
+**What changes depending on decision 2** (resolved 2026-09-28: **the tenant closes**):
+- **Tenant closes:** build the ticket as written. **← chosen**
+- ~~Platform closes: cancel T5d, and closing moves to T9.~~
+- ~~Both: build T5d, and add T9 for the platform.~~
 
-**Readiness:** it can be built now, since tenant-scoping the close is the more restrictive default. **Don't merge it until decision 2 is answered, along with the product owner's answer on requiring a confirmation, which would change the request.** Closing is irreversible, so exposing it by mistake is the costliest error in the T5 set.
+**Readiness:** ready to build and merge. Both merge blockers were resolved on 2026-09-28: the tenant closes, and no confirmation is needed, so the request has no body.
 
 **Definition of done**
 - **`@WebMvcTest`:** the contract, tenant capture, and 400/401 with no handler calls.
@@ -345,8 +347,8 @@
 - **Handler tests:** covered by T2. `SUSPENDED` → `CLOSED` is already covered by `CloseOrganizationHandlerTest.shouldCloseSuspendedOrganization`.
 
 **Open questions**
-- **Product owner, decision 2:** who closes?
-- **Product owner:** should closing require a confirmation, such as retyping the legal name?
+- ~~**Product owner, decision 2:** who closes?~~ **Resolved 2026-09-28:** the tenant.
+- ~~**Product owner:** should closing require a confirmation?~~ **Resolved 2026-09-28:** no.
 - **Product owner:** should a tenant be able to abandon a `PENDING_ACTIVATION` organization? The domain refuses today.
 - ~~Architect: repeat behaviour~~ **Resolved** (decision 3: keep 409 `ORGANIZATION_ALREADY_CLOSED`).
 
@@ -369,32 +371,39 @@
 
 **Contract**
 - **Success:** **200** with `{organizationId, status:"ACTIVE", activatedAt}`. There is no `tenantId` (decision 11a).
-- **Errors:** the shared table, plus 409 `ORGANIZATION_CANNOT_BE_ACTIVATED` when the status is `ACTIVE` or `CLOSED`. Activation is allowed from `PENDING_ACTIVATION` and `SUSPENDED`.
+- **Errors:** the shared table, plus:
+  - 409 `ORGANIZATION_ALREADY_ACTIVE` when the status is `ACTIVE` (a repeat)
+  - 409 `ORGANIZATION_CANNOT_BE_ACTIVATED` when it is `SUSPENDED` or `CLOSED`
+
+  Activation is allowed only from `PENDING_ACTIVATION` (T5e-0).
 
 **Acceptance criteria**
 - **Happy path:** Given A's `PENDING_ACTIVATION` organization, then activating returns 200 with `status=ACTIVE`, and T5a now succeeds on it.
 - **Tenant only from the provider; no tenant → 401; malformed id → 400:** as in the shared contract.
 - **Other tenant:** in any status of A, the response is 404, identical to the missing-organization 404. It is never 409.
-- **Business rules:** an `ACTIVE` or `CLOSED` organization gives 409 `ORGANIZATION_CANNOT_BE_ACTIVATED`.
+- **Business rules:**
+  - An `ACTIVE` organization gives 409 `ORGANIZATION_ALREADY_ACTIVE`.
+  - A `SUSPENDED` or `CLOSED` organization gives 409 `ORGANIZATION_CANNOT_BE_ACTIVATED`. For `SUSPENDED`, the status stays `SUSPENDED` in Postgres (end-to-end `*IT`).
 - **Concurrency:** 409 `CONCURRENT_MODIFICATION`.
 
 **Business rules**
-- Under a tenant-activates answer, only a `PENDING_ACTIVATION` organization can be activated by the tenant. Reinstating a `SUSPENDED` organization is the platform's job (T9).
+- Only a `PENDING_ACTIVATION` organization can be activated. Lifting a suspension is `reinstate()`, which T5e never exposes.
 - A closed organization can never be reactivated.
 
 **What changes depending on decision 2:**
 - **Tenant activates** (with the platform suspending and reinstating, or with no suspension concept at all):
-  - **Prerequisite domain ticket:** `activate()` accepts only `PENDING_ACTIVATION`, through a new rule (e.g. `OrganizationMustBePendingActivationRule`) that keeps the code `ORGANIZATION_CANNOT_BE_ACTIVATED`.
-  - A new `reinstate()` for `SUSPENDED` → `ACTIVE`, with its own rule (e.g. `ORGANIZATION_CANNOT_BE_REINSTATED`), event (`OrganizationReinstated`), command and handler. Only T9 exposes it.
-  - The split is recommended even with no suspension concept, so that adding suspension later can't open a hole. At minimum, T5e must be tested so it can't lift `SUSPENDED`.
-  - The product owner accepts that `PENDING_ACTIVATION` is then not a real gate, unless it has prerequisites such as KYC or payment.
-- **Platform activates and reinstates:** no domain change. Cancel T5e, and T9 reuses `ActivateOrganizationHandler` behind a platform path, which needs an unscoped load port. T5a–d stay unusable end to end until T9 exists.
-- **Tenant for first activation, platform for reinstatement:** the same domain split as the first case.
+  - Depends on T5e-0 (domain split, merged).
+  - The Reinstate command and handler come with their actor in the suspension-lifecycle ticket or T9.
+  - The product owner accepts that `PENDING_ACTIVATION` is then not a real gate, unless it has prerequisites (KYC, payment).
+- **Platform activates and reinstates:** cancel T5e.
+  - T9 exposes `activate()` (from `PENDING_ACTIVATION`) and `reinstate()` (from `SUSPENDED`) behind a platform path, which needs a platform actor and an unscoped load port.
+  - T5a–d stay unusable end to end until T9 exists.
+- **Tenant for first activation, platform for reinstatement:** covered by T5e-0 as it stands.
 
 **Dependencies:**
 - **Product-owner decision 2**
 - T5a
-- possibly a domain ticket
+- T5e-0 (merged)
 
 **Definition of done:** same layers as T5d, plus an end-to-end `*IT` that goes through register, then activate, then add store, all over HTTP.
 
@@ -415,5 +424,5 @@ All resolved: see **Architect decisions** 1–12 at the top of this file.
 | T5a add store | yes | yes | after activation exists (T5e or T9), bootstrap and T7 |
 | T5b change headquarters | yes, after T5a | yes | same |
 | T5c deactivate store | yes, after T5a | yes | same |
-| T5d close | yes, after T5a | **wait for decision 2 and the confirmation answer** | same |
-| T5e activate | **blocked on decision 2 and the domain split ticket** | no | not applicable |
+| T5d close | yes, after T5a | yes (both blockers resolved 2026-09-28) | same |
+| T5e activate | **blocked on decision 2**; T5e-0 must be merged first | no | not applicable |

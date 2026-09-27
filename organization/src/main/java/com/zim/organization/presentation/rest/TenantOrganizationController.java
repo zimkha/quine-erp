@@ -2,17 +2,21 @@ package com.zim.organization.presentation.rest;
 
 import com.zim.organization.application.command.AddStoreCommand;
 import com.zim.organization.application.command.ChangeHeadquartersCommand;
+import com.zim.organization.application.command.CloseOrganizationCommand;
 import com.zim.organization.application.command.DeactivateStoreCommand;
 import com.zim.organization.application.handler.AddStoreHandler;
 import com.zim.organization.application.handler.ChangeHeadquartersHandler;
+import com.zim.organization.application.handler.CloseOrganizationHandler;
 import com.zim.organization.application.handler.DeactivateStoreHandler;
 import com.zim.organization.application.result.AddStoreResult;
 import com.zim.organization.application.result.ChangeHeadquartersResult;
+import com.zim.organization.application.result.CloseOrganizationResult;
 import com.zim.organization.application.result.DeactivateStoreResult;
 import com.zim.organization.presentation.rest.request.AddStoreRequest;
 import com.zim.organization.presentation.rest.request.ChangeHeadquartersRequest;
 import com.zim.organization.presentation.rest.response.AddStoreResponse;
 import com.zim.organization.presentation.rest.response.ChangeHeadquartersResponse;
+import com.zim.organization.presentation.rest.response.CloseOrganizationResponse;
 import com.zim.organization.presentation.rest.response.DeactivateStoreResponse;
 import com.zim.shared.domain.TenantId;
 import com.zim.shared.tenant.CurrentTenantProvider;
@@ -43,12 +47,14 @@ public class TenantOrganizationController {
   private final AddStoreHandler addStoreHandler;
   private final ChangeHeadquartersHandler changeHeadquartersHandler;
   private final DeactivateStoreHandler deactivateStoreHandler;
+  private final CloseOrganizationHandler closeOrganizationHandler;
 
   public TenantOrganizationController(
       CurrentTenantProvider currentTenantProvider,
       AddStoreHandler addStoreHandler,
       ChangeHeadquartersHandler changeHeadquartersHandler,
-      DeactivateStoreHandler deactivateStoreHandler
+      DeactivateStoreHandler deactivateStoreHandler,
+      CloseOrganizationHandler closeOrganizationHandler
   ) {
     this.currentTenantProvider = Objects.requireNonNull(
         currentTenantProvider,
@@ -65,6 +71,10 @@ public class TenantOrganizationController {
     this.deactivateStoreHandler = Objects.requireNonNull(
         deactivateStoreHandler,
         "Deactivate store handler cannot be null"
+    );
+    this.closeOrganizationHandler = Objects.requireNonNull(
+        closeOrganizationHandler,
+        "Close organization handler cannot be null"
     );
   }
 
@@ -158,6 +168,32 @@ public class TenantOrganizationController {
         result.storeId(),
         result.active(),
         result.deactivatedAt()
+    );
+
+    return ResponseEntity.ok(response);
+  }
+
+  /**
+   * Closes the organization. Closing is irreversible and needs no
+   * confirmation, so there is no request body; any body sent is ignored. A
+   * repeat is answered with 409 {@code ORGANIZATION_ALREADY_CLOSED}, which
+   * clients treat as "target state already reached". The response does not
+   * echo the tenant.
+   */
+  @PostMapping("/closure")
+  public ResponseEntity<CloseOrganizationResponse> closeOrganization(
+      @PathVariable("id") UUID id
+  ) {
+    TenantId tenantId = currentTenantProvider.currentTenant();
+
+    CloseOrganizationResult result = closeOrganizationHandler.handle(
+        new CloseOrganizationCommand(tenantId, id)
+    );
+
+    CloseOrganizationResponse response = new CloseOrganizationResponse(
+        result.organizationId(),
+        result.status(),
+        result.closedAt()
     );
 
     return ResponseEntity.ok(response);
