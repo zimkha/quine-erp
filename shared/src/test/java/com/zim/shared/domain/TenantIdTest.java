@@ -40,11 +40,17 @@ class TenantIdTest {
   }
 
   @Test
+  void shouldRenderUuidTextFromToString() {
+    UUID uuid = UUID.fromString("3f2c1a7e-9b4d-4c8e-a1f0-5d6e7b8c9a01");
+
+    assertThat(new TenantId(uuid).toString()).isEqualTo(uuid.toString());
+  }
+
+  @Test
   void shouldGenerateDistinctIds() {
     TenantId first = TenantId.generate();
     TenantId second = TenantId.generate();
 
-    assertThat(first).isNotNull();
     assertThat(first).isNotEqualTo(second);
   }
 }

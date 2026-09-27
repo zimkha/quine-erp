@@ -17,7 +17,8 @@ placement, aggregates, ports, and persistence are the Architect's job, not yours
 
 - Read the relevant existing module(s) under `<module>/src/main/java/com/zim/<module>/domain`
   to reuse the project's existing ubiquitous language instead of inventing new terms. The
-  `organization` module (`Organization`, `Store`, `TenantId`, `OrganizationStatus`, ...) is the
+  `organization` module (`Organization`, `Store`, `OrganizationStatus`, ...; plus `TenantId` from the
+  shared kernel) is the
   reference vocabulary and the most complete example of how a bounded context is modeled here.
 - Check whether the request fits an existing module or implies a new bounded context. If
   unsure, say so explicitly in the ticket rather than guessing — that call is for the Architect,

@@ -43,7 +43,7 @@ bounded context: `shared`, `organization`, `identity`, `customer`, `supplier`, `
 `inventory`, `purchasing`, `sales`, `cash`, `notification`, `reporting`, `bootstrap`.
 
 - **`shared`** is the shared kernel: `AggregateRoot`, `DomainEvent`, `BusinessRule` (+
-  `BusinessRuleViolationException`), `DomainException`. Every other module depends on it and
+  `BusinessRuleViolationException`), `DomainException`, `TenantId`. Every other module depends on it and
   builds its own aggregates/rules on top of these base types.
 - **`bootstrap`** is the composition root intended to wire the business modules into one
   runnable Spring Boot application. It currently has no dependencies on the other modules and
@@ -61,7 +61,7 @@ bounded context: `shared`, `organization`, `identity`, `customer`, `supplier`, `
 com.zim.organization
 ├── domain
 │   ├── model        # aggregates (Organization, Store) extending shared AggregateRoot
-│   ├── valueobject   # OrganizationId, StoreId, TenantId, CurrencyCode, ... (records)
+│   ├── valueobject   # OrganizationId, StoreId, CurrencyCode, ... (records)
 │   ├── event         # domain events (OrganizationRegistered, StoreAdded, ...)
 │   ├── rule          # one class per BusinessRule (e.g. StoreCodeMustBeUniqueRule)
 │   ├── repository     # domain-facing repository interface (port, driven side)
