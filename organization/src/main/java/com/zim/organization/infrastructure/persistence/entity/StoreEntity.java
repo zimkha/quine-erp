@@ -40,6 +40,15 @@ public class StoreEntity {
   )
   private OrganizationEntity organization;
 
+  // Copied from the organization in attachTo. The database enforces the
+  // match with fk_stores_organization_tenant (organization_id, tenant_id).
+  @Column(
+      name = "tenant_id",
+      nullable = false,
+      updatable = false
+  )
+  private UUID tenantId;
+
   @Column(
       name = "code",
       nullable = false,
@@ -97,6 +106,10 @@ public class StoreEntity {
     this.organization = Objects.requireNonNull(
         organization,
         "Organization cannot be null"
+    );
+    this.tenantId = Objects.requireNonNull(
+        organization.getTenantId(),
+        "Organization tenant cannot be null"
     );
   }
 

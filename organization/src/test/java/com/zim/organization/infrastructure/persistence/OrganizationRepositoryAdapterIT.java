@@ -17,8 +17,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -270,6 +273,99 @@ class OrganizationRepositoryAdapterIT
     assertThatThrownBy(() -> repositoryAdapter.save(second))
         .isInstanceOf(OrganizationAlreadyExistsException.class)
         .hasMessageContaining("quincaillerie thiès sarl");
+  }
+
+  @Test
+  void shouldStoreOrganizationTenantOnEveryStoreWhenRegistering() {
+    // Given / When: headquarters and a secondary store, inserted together
+    saveTenantAOrganizationWithSecondaryStore();
+
+    entityManager.flush();
+    entityManager.clear();
+
+    // Then
+    assertThat(storeTenantsOf(ORGANIZATION_UUID))
+        .containsOnlyKeys(HEADQUARTERS_UUID, SECONDARY_STORE_UUID)
+        .allSatisfy((storeId, tenantId) ->
+            assertThat(tenantId).isEqualTo(TENANT_UUID)
+        );
+  }
+
+  @Test
+  void shouldStoreOrganizationTenantOnStoreAddedThroughUpdate() {
+    // Given: a registered organization, reloaded as an existing aggregate
+    Organization registered = Organization.register(
+        new OrganizationId(ORGANIZATION_UUID),
+        new TenantId(TENANT_UUID),
+        new OrganizationName("Quincaillerie Thiès"),
+        new LegalName("Quincaillerie Thiès SARL"),
+        CurrencyCode.xof(),
+        new StoreId(HEADQUARTERS_UUID),
+        new StoreCode("THIES-01"),
+        new StoreName("Magasin principal"),
+        UUID.randomUUID(),
+        CREATED_AT
+    );
+    registered.clearDomainEvents();
+    repositoryAdapter.save(registered);
+
+    entityManager.flush();
+    entityManager.clear();
+
+    Organization organization = repositoryAdapter
+        .findById(
+            new TenantId(TENANT_UUID),
+            new OrganizationId(ORGANIZATION_UUID)
+        )
+        .orElseThrow();
+
+    organization.activate(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-01T11:00:00Z")
+    );
+    organization.addStore(
+        new StoreId(SECONDARY_STORE_UUID),
+        new StoreCode("DAKAR-01"),
+        new StoreName("Magasin Dakar"),
+        UUID.randomUUID(),
+        Instant.parse("2026-08-01T12:00:00Z")
+    );
+    organization.clearDomainEvents();
+
+    // When: saved through the update path
+    assertThat(organization.version()).isNotNull();
+    repositoryAdapter.save(organization);
+
+    entityManager.flush();
+    entityManager.clear();
+
+    // Then
+    assertThat(storeTenantsOf(ORGANIZATION_UUID))
+        .containsOnlyKeys(HEADQUARTERS_UUID, SECONDARY_STORE_UUID)
+        .allSatisfy((storeId, tenantId) ->
+            assertThat(tenantId).isEqualTo(TENANT_UUID)
+        );
+  }
+
+  /**
+   * Reads stores.tenant_id straight from the table: the domain model does
+   * not carry it, so the adapter cannot be used to check it.
+   */
+  private Map<UUID, UUID> storeTenantsOf(UUID organizationId) {
+    @SuppressWarnings("unchecked")
+    List<Object[]> rows = entityManager.createNativeQuery("""
+          SELECT CAST(id AS text), CAST(tenant_id AS text)
+          FROM organization.stores
+          WHERE organization_id = CAST(:organizationId AS uuid)
+          """)
+        .setParameter("organizationId", organizationId)
+        .getResultList();
+
+    return rows.stream()
+        .collect(Collectors.toMap(
+            row -> UUID.fromString((String) row[0]),
+            row -> UUID.fromString((String) row[1])
+        ));
   }
 
   private void saveTenantAOrganizationWithSecondaryStore() {

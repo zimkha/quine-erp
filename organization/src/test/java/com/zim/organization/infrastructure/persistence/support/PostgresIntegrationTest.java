@@ -42,6 +42,14 @@ public abstract class PostgresIntegrationTest {
     POSTGRES.start();
   }
 
+  /**
+   * The shared container, for tests that must not use the Spring context
+   * (e.g. migration tests that create their own database on it).
+   */
+  public static PostgreSQLContainer container() {
+    return POSTGRES;
+  }
+
   @DynamicPropertySource
   static void configurePostgres(
       DynamicPropertyRegistry registry
