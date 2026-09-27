@@ -1,10 +1,11 @@
 package com.zim.organization.presentation.rest;
 
-import com.jayway.jsonpath.JsonPath;
 import com.zim.organization.OrganizationJpaTestApplication;
 import com.zim.organization.application.command.ActivateOrganizationCommand;
+import com.zim.organization.application.command.AddStoreCommand;
 import com.zim.organization.application.command.RegisterOrganizationCommand;
 import com.zim.organization.application.handler.ActivateOrganizationHandler;
+import com.zim.organization.application.handler.AddStoreHandler;
 import com.zim.organization.application.handler.RegisterOrganizationHandler;
 import com.zim.organization.application.result.RegisterOrganizationResult;
 import com.zim.organization.infrastructure.configuration.OrganizationConfiguration;
@@ -26,17 +27,18 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * POST /api/organizations/{id}/stores over the real handler, repository
+ * PUT /api/organizations/{id}/headquarters over the real handler, repository
  * adapter and Postgres. Only the tenant provider is stubbed, until identity
- * exists.
+ * exists. Same setup as {@link AddStoreEndToEndIT}.
  *
  * <p>Runs without a test-managed transaction, as in production: every
  * handler call commits its own. Each test registers its own tenants with a
@@ -53,7 +55,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     ApiExceptionHandler.class,
     SettableTenantProvider.ProviderConfiguration.class
 })
-class AddStoreEndToEndIT {
+class ChangeHeadquartersEndToEndIT {
 
   @DynamicPropertySource
   static void configurePostgres(DynamicPropertyRegistry registry) {
@@ -81,6 +83,9 @@ class AddStoreEndToEndIT {
   private ActivateOrganizationHandler activateOrganizationHandler;
 
   @Autowired
+  private AddStoreHandler addStoreHandler;
+
+  @Autowired
   private SettableTenantProvider tenantProvider;
 
   @Autowired
@@ -88,16 +93,26 @@ class AddStoreEndToEndIT {
 
   private TenantId tenantA;
   private UUID organizationOfA;
+  private UUID headquartersOfA;
+  private UUID secondStoreOfA;
 
+  /**
+   * Tenant A's ACTIVE organization with its headquarters and a second,
+   * active store, seeded through the handlers.
+   */
   @BeforeEach
-  void seedActiveOrganizationOfTenantA() {
+  void seedActiveOrganizationOfTenantAWithTwoStores() {
     RegisterOrganizationResult registered = register();
     tenantA = new TenantId(registered.tenantId());
     organizationOfA = registered.organizationId();
+    headquartersOfA = registered.headquartersId();
 
     activateOrganizationHandler.handle(
         new ActivateOrganizationCommand(tenantA, organizationOfA)
     );
+    secondStoreOfA = addStoreHandler.handle(
+        new AddStoreCommand(tenantA, organizationOfA, "THIES-02", "Magasin 2")
+    ).storeId();
   }
 
   @AfterEach
@@ -106,34 +121,24 @@ class AddStoreEndToEndIT {
   }
 
   @Test
-  void shouldAddStoreUnderCallerTenant() throws Exception {
+  void shouldChangeHeadquartersUnderCallerTenant() throws Exception {
     tenantProvider.set(tenantA);
 
-    String body = addStore(organizationOfA)
-        .andExpect(status().isCreated())
+    changeHeadquarters(organizationOfA, secondStoreOfA)
+        .andExpect(status().isOk())
         .andExpect(jsonPath("$.organizationId")
             .value(organizationOfA.toString()))
-        .andExpect(jsonPath("$.storeCode").value("THIES-02"))
-        .andExpect(jsonPath("$.headquarters").value(false))
-        .andExpect(jsonPath("$.active").value(true))
-        .andReturn()
-        .getResponse()
-        .getContentAsString();
+        .andExpect(jsonPath("$.headquartersId")
+            .value(secondStoreOfA.toString()))
+        .andExpect(jsonPath("$.changedAt").exists());
 
-    UUID storedTenant = jdbcTemplate.queryForObject(
-        "SELECT tenant_id FROM organization.stores "
-            + "WHERE id = ? AND organization_id = ? AND code = 'THIES-02'",
-        UUID.class,
-        UUID.fromString(JsonPath.read(body, "$.storeId")),
-        organizationOfA
-    );
-    assertThat(storedTenant).isEqualTo(tenantA.value());
-    assertThat(storeCount(organizationOfA)).isEqualTo(2);
+    assertThat(headquartersIds(organizationOfA))
+        .containsExactly(secondStoreOfA);
   }
 
   /**
-   * Tenant B posting to A's organization gets exactly the 404 of a missing
-   * organization, and nothing is written.
+   * Tenant B sending A's organization id and A's real store id gets exactly
+   * the 404 of a missing organization, and A's headquarters is unchanged.
    */
   @Test
   void shouldAnswerNotFoundToAnotherTenant() throws Exception {
@@ -141,12 +146,12 @@ class AddStoreEndToEndIT {
     tenantProvider.set(tenantB);
     UUID randomId = UUID.randomUUID();
 
-    String crossTenantBody = addStore(organizationOfA)
+    String crossTenantBody = changeHeadquarters(organizationOfA, secondStoreOfA)
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("ORGANIZATION_NOT_FOUND"))
         .andReturn().getResponse().getContentAsString();
 
-    String missingBody = addStore(randomId)
+    String missingBody = changeHeadquarters(randomId, secondStoreOfA)
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("ORGANIZATION_NOT_FOUND"))
         .andReturn().getResponse().getContentAsString();
@@ -155,7 +160,8 @@ class AddStoreEndToEndIT {
     // once that and the timestamp are set aside, the bodies are identical.
     assertThat(normalized(crossTenantBody, organizationOfA))
         .isEqualTo(normalized(missingBody, randomId));
-    assertThat(storeCount(organizationOfA)).isEqualTo(1);
+    assertThat(headquartersIds(organizationOfA))
+        .containsExactly(headquartersOfA);
   }
 
   private RegisterOrganizationResult register() {
@@ -170,20 +176,22 @@ class AddStoreEndToEndIT {
     );
   }
 
-  private ResultActions addStore(UUID organizationId) throws Exception {
+  private ResultActions changeHeadquarters(UUID organizationId, UUID storeId)
+      throws Exception {
     return mockMvc.perform(
-        post("/api/organizations/{id}/stores", organizationId)
+        put("/api/organizations/{id}/headquarters", organizationId)
             .contentType(MediaType.APPLICATION_JSON)
             .content("""
-                {"storeCode": "thies-02", "storeName": "Magasin 2"}
-                """)
+                {"storeId": "%s"}
+                """.formatted(storeId))
     );
   }
 
-  private int storeCount(UUID organizationId) {
-    return jdbcTemplate.queryForObject(
-        "SELECT count(*) FROM organization.stores WHERE organization_id = ?",
-        Integer.class,
+  private List<UUID> headquartersIds(UUID organizationId) {
+    return jdbcTemplate.queryForList(
+        "SELECT id FROM organization.stores "
+            + "WHERE organization_id = ? AND headquarters",
+        UUID.class,
         organizationId
     );
   }
