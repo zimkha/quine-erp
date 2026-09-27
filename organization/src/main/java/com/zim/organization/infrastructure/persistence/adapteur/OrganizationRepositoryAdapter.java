@@ -82,7 +82,7 @@ public final class OrganizationRepositoryAdapter
             organization.id().value(),
             organization.tenantId().value()
         )
-        .orElseThrow(() -> staleState(organization));
+        .orElseThrow(() -> missingForTenant(organization));
 
     if (!entity.getVersion().equals(organization.version())) {
       throw staleState(organization);
@@ -117,6 +117,21 @@ public final class OrganizationRepositoryAdapter
           );
       throw translated != null ? translated : exception;
     }
+  }
+
+  /**
+   * The tenant-scoped load missed. If the row exists under another tenant,
+   * the aggregate's tenant does not match the persisted one: an isolation
+   * or programming error, not a concurrent edit, so it must not be reported
+   * as an optimistic locking conflict.
+   */
+  private RuntimeException missingForTenant(Organization organization) {
+    if (repository.existsById(organization.id().value())) {
+      return new IllegalStateException(
+          "Aggregate tenant does not match persisted tenant"
+      );
+    }
+    return staleState(organization);
   }
 
   private static ObjectOptimisticLockingFailureException staleState(

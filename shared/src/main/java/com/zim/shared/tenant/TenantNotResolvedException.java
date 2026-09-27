@@ -18,6 +18,14 @@ public final class TenantNotResolvedException extends RuntimeException {
     super(MESSAGE);
   }
 
+  /**
+   * Keeps the underlying failure (e.g. a token parse error) for server
+   * logs; the message stays the same generic one.
+   */
+  public TenantNotResolvedException(Throwable cause) {
+    super(MESSAGE, cause);
+  }
+
   public String code() {
     return CODE;
   }

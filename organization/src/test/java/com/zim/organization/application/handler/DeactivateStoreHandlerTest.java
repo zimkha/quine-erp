@@ -1,7 +1,6 @@
 package com.zim.organization.application.handler;
 
 import com.zim.organization.application.command.DeactivateStoreCommand;
-import com.zim.organization.application.exception.OrganizationNotFoundException;
 import com.zim.organization.application.result.DeactivateStoreResult;
 
 import com.zim.organization.domain.event.StoreDeactivated;
@@ -12,13 +11,13 @@ import com.zim.shared.domain.TenantId;
 import com.zim.organization.testing.InMemoryDomainEventPublisher;
 import com.zim.organization.testing.InMemoryOrganizationRepository;
 import com.zim.shared.domain.BusinessRuleViolationException;
-import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.UUID;
 
+import static com.zim.organization.testing.OrganizationAssertions.assertOrganizationNotFound;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -161,7 +160,7 @@ class DeactivateStoreHandlerTest {
             ORGANIZATION_UUID,
             SECONDARY_STORE_UUID
         )
-    ));
+    ), ORGANIZATION_UUID, repository, publisher);
   }
 
     @Test
@@ -248,7 +247,7 @@ class DeactivateStoreHandlerTest {
             ORGANIZATION_UUID,
             SECONDARY_STORE_UUID
         )
-    ));
+    ), ORGANIZATION_UUID, repository, publisher);
 
     assertThat(organization.stores())
         .hasSize(2)
@@ -269,7 +268,7 @@ class DeactivateStoreHandlerTest {
             ORGANIZATION_UUID,
             HEADQUARTERS_UUID
         )
-    ));
+    ), ORGANIZATION_UUID, repository, publisher);
 
     assertThat(organization.stores())
         .filteredOn(Store::isHeadquarters)
@@ -278,31 +277,6 @@ class DeactivateStoreHandlerTest {
           assertThat(store.id().value()).isEqualTo(HEADQUARTERS_UUID);
           assertThat(store.isActive()).isTrue();
         });
-  }
-
-  /**
-   * Another tenant's organization must be reported exactly like a missing
-   * one: same exception, code and message, and no side effect.
-   */
-  private void assertOrganizationNotFound(ThrowingCallable call) {
-    assertThatThrownBy(call)
-        .isInstanceOfSatisfying(
-            OrganizationNotFoundException.class,
-            exception -> {
-              assertThat(exception.code())
-                  .isEqualTo("ORGANIZATION_NOT_FOUND");
-              assertThat(exception.organizationId())
-                  .isEqualTo(ORGANIZATION_UUID);
-              assertThat(exception.getMessage())
-                  .isEqualTo(
-                      new OrganizationNotFoundException(ORGANIZATION_UUID)
-                          .getMessage()
-                  );
-            }
-        );
-
-    assertThat(repository.saveCount()).isZero();
-    assertThat(publisher.publishedEvents()).isEmpty();
   }
 
     private static Organization activeOrganizationWithSecondaryStore() {

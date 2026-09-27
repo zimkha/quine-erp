@@ -348,6 +348,55 @@ class OrganizationRepositoryAdapterIT
   }
 
   /**
+   * An existing aggregate whose tenant differs from the persisted one is an
+   * isolation error, not a concurrent edit: it must not surface as an
+   * optimistic locking conflict, and nothing may be written.
+   */
+  @Test
+  void shouldRejectUpdateWhenAggregateTenantDoesNotMatchPersistedTenant() {
+    // Given
+    saveTenantAOrganizationWithSecondaryStore();
+
+    entityManager.flush();
+    entityManager.clear();
+
+    Organization persisted = repositoryAdapter
+        .findById(
+            new TenantId(TENANT_UUID),
+            new OrganizationId(ORGANIZATION_UUID)
+        )
+        .orElseThrow();
+
+    Organization otherTenantCopy = Organization.restore(
+        persisted.id(),
+        new TenantId(OTHER_TENANT_UUID),
+        new OrganizationName("Nom modifié"),
+        persisted.legalName(),
+        persisted.currency(),
+        persisted.status(),
+        persisted.stores(),
+        persisted.createdAt(),
+        persisted.version()
+    );
+
+    // When / Then
+    assertThatThrownBy(() -> repositoryAdapter.save(otherTenantCopy))
+        .isExactlyInstanceOf(IllegalStateException.class)
+        .hasMessage("Aggregate tenant does not match persisted tenant");
+
+    entityManager.flush();
+    entityManager.clear();
+
+    OrganizationEntity reloaded = springDataRepository
+        .findWithStoresByIdAndTenantId(ORGANIZATION_UUID, TENANT_UUID)
+        .orElseThrow();
+
+    assertThat(reloaded.getTenantId()).isEqualTo(TENANT_UUID);
+    assertThat(reloaded.getVersion()).isEqualTo(persisted.version());
+    assertThat(reloaded.getName()).isEqualTo("Quincaillerie Thiès");
+  }
+
+  /**
    * Reads stores.tenant_id straight from the table: the domain model does
    * not carry it, so the adapter cannot be used to check it.
    */

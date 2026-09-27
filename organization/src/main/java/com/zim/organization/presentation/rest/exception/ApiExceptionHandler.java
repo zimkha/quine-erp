@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
 @RestControllerAdvice(basePackageClasses = OrganizationController.class)
 public class ApiExceptionHandler {
 
-  static final String WWW_AUTHENTICATE_VALUE = "Bearer realm=\"quine-erp\"";
+  private static final String WWW_AUTHENTICATE_VALUE = "Bearer realm=\"quine-erp\"";
 
   @ExceptionHandler(MethodArgumentNotValidException.class)
   public ResponseEntity<ApiErrorResponse> handleInvalidRequest(
@@ -49,14 +49,16 @@ public class ApiExceptionHandler {
   public ResponseEntity<ApiErrorResponse> handleTenantNotResolved(
       TenantNotResolvedException exception
   ) {
+    ResponseEntity<ApiErrorResponse> response = error(
+        HttpStatus.UNAUTHORIZED,
+        exception.code(),
+        exception.getMessage()
+    );
     return ResponseEntity
-        .status(HttpStatus.UNAUTHORIZED)
+        .status(response.getStatusCode())
+        .headers(response.getHeaders())
         .header(HttpHeaders.WWW_AUTHENTICATE, WWW_AUTHENTICATE_VALUE)
-        .body(new ApiErrorResponse(
-            exception.code(),
-            exception.getMessage(),
-            Instant.now()
-        ));
+        .body(response.getBody());
   }
 
   @ExceptionHandler(OrganizationNotFoundException.class)
