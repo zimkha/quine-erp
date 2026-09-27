@@ -2,7 +2,7 @@
 
 - **Status:** written by the BA against `main` at `c035c0d`, after T1–T4 were merged, and validated by the Architect. The Architect's changes are already applied to the ticket text below.
   - T5a, T5b and T5c are validated with changes.
-  - T5d is validated with changes, but **must not merge until product-owner decision 2 is answered**.
+  - T5d is validated with changes. **Its merge blockers are resolved** (product owner, 2026-09-28: the tenant closes, and no confirmation is needed).
   - T5e is **blocked**.
 - **Source:** the "Later tickets" section of `docs/tickets/tenant-scoping-T1-T4.md`.
 - **Workflow:** BA → Architect → Developer → Lead Developer (see `CLAUDE.md`).
@@ -47,7 +47,7 @@
 | 9 | T5b: unknown store id, and `previousHeadquartersId` | **Keep 409 `STORE_DOES_NOT_BELONG_TO_ORGANIZATION`** on T5b and T5c. Ownership is already proven, so nothing leaks. **No `previousHeadquartersId`.** |
 | 10 | T5c: 200 or 204 | **200 with a body** (decision 1). |
 | 11a | Echo `tenantId` on close and activate | **No.** Only register keeps `tenantId`, because that's where the tenant is created. |
-| 11b | T5d: build now, merge after decision 2 | **Agreed.** The confirmation question (retyping the legal name) must also be answered before merge, because it would change the request. |
+| 11b | T5d: build now, merge after decision 2 | **Agreed.** The confirmation question (retyping the legal name) must also be answered before merge, because it would change the request. **Resolved 2026-09-28:** the tenant closes, and no confirmation is needed. |
 | 12 | T5e | **Blocked.** See the domain split in T5e. |
 
 **Other Architect notes:**
@@ -92,6 +92,8 @@
 - **Out of scope:** mapping 405 and 415 into `ApiErrorResponse`.
 
 **Product-owner decisions 1, 3 and 4** don't affect T5a–d. Decision 2 is covered in T5d and T5e.
+
+**Product-owner decisions recorded 2026-09-28:** the **tenant closes** its organization (decision 2, closing half), and closing needs **no confirmation step**. Who activates, suspends and reinstates is still open.
 
 ---
 
@@ -290,7 +292,7 @@
 
 ## T5d: Close my organization
 
-**User story (valid only if decision 2 = "the tenant closes").** As a tenant, I want to close my organization when I stop trading, so that no further changes can be made to it.
+**User story** (the product owner confirmed on 2026-09-28 that the tenant closes). As a tenant, I want to close my organization when I stop trading, so that no further changes can be made to it.
 
 **Scope:**
 - `POST /api/organizations/{id}/closure` → `CloseOrganizationCommand(tenant, id)`.
@@ -334,7 +336,7 @@
 - **Platform closes:** cancel T5d, and closing moves to T9.
 - **Both:** build T5d, and add T9 for the platform.
 
-**Readiness:** it can be built now, since tenant-scoping the close is the more restrictive default. **Don't merge it until decision 2 is answered, along with the product owner's answer on requiring a confirmation, which would change the request.** Closing is irreversible, so exposing it by mistake is the costliest error in the T5 set.
+**Readiness:** ready to build and merge. Both merge blockers were resolved on 2026-09-28: the tenant closes, and no confirmation is needed, so the request has no body.
 
 **Definition of done**
 - **`@WebMvcTest`:** the contract, tenant capture, and 400/401 with no handler calls.
@@ -345,8 +347,8 @@
 - **Handler tests:** covered by T2. `SUSPENDED` → `CLOSED` is already covered by `CloseOrganizationHandlerTest.shouldCloseSuspendedOrganization`.
 
 **Open questions**
-- **Product owner, decision 2:** who closes?
-- **Product owner:** should closing require a confirmation, such as retyping the legal name?
+- ~~**Product owner, decision 2:** who closes?~~ **Resolved 2026-09-28:** the tenant.
+- ~~**Product owner:** should closing require a confirmation?~~ **Resolved 2026-09-28:** no.
 - **Product owner:** should a tenant be able to abandon a `PENDING_ACTIVATION` organization? The domain refuses today.
 - ~~Architect: repeat behaviour~~ **Resolved** (decision 3: keep 409 `ORGANIZATION_ALREADY_CLOSED`).
 
@@ -415,5 +417,5 @@ All resolved: see **Architect decisions** 1–12 at the top of this file.
 | T5a add store | yes | yes | after activation exists (T5e or T9), bootstrap and T7 |
 | T5b change headquarters | yes, after T5a | yes | same |
 | T5c deactivate store | yes, after T5a | yes | same |
-| T5d close | yes, after T5a | **wait for decision 2 and the confirmation answer** | same |
+| T5d close | yes, after T5a | yes (both blockers resolved 2026-09-28) | same |
 | T5e activate | **blocked on decision 2 and the domain split ticket** | no | not applicable |
