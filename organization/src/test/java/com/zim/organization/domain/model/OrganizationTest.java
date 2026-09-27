@@ -1,8 +1,10 @@
 package com.zim.organization.domain.model;
 
 import com.zim.organization.domain.event.HeadquartersChanged;
+import com.zim.organization.domain.event.OrganizationActivated;
 import com.zim.organization.domain.event.OrganizationClosed;
 import com.zim.organization.domain.event.OrganizationRegistered;
+import com.zim.organization.domain.event.OrganizationReinstated;
 import com.zim.organization.domain.event.OrganizationSuspended;
 import com.zim.organization.domain.event.StoreDeactivated;
 import com.zim.organization.domain.valueobject.*;
@@ -907,6 +909,329 @@ class OrganizationTest {
         .hasMessage(
             "Organization must contain exactly one headquarters"
         );
+  }
+
+  @Test
+  void shouldRaiseOrganizationActivatedEventOnFirstActivation() {
+    Organization organization = newOrganization();
+    organization.clearDomainEvents();
+
+    UUID eventId = UUID.fromString(
+        "3f1c9b0e-2a4d-4e6f-8a1b-7c9d0e2f4a61"
+    );
+
+    Instant activatedAt =
+        Instant.parse("2026-08-02T10:00:00Z");
+
+    organization.activate(eventId, activatedAt);
+
+    assertThat(organization.status())
+        .isEqualTo(OrganizationStatus.ACTIVE);
+
+    assertThat(organization.domainEvents())
+        .singleElement()
+        .isInstanceOf(OrganizationActivated.class);
+
+    OrganizationActivated event =
+        (OrganizationActivated)
+            organization.domainEvents().getFirst();
+
+    assertThat(event.eventId()).isEqualTo(eventId);
+    assertThat(event.organizationId())
+        .isEqualTo(organization.id());
+    assertThat(event.tenantId())
+        .isEqualTo(organization.tenantId());
+    assertThat(event.occurredAt())
+        .isEqualTo(activatedAt);
+    assertThat(event.eventType())
+        .isEqualTo("organization.activated.v1")
+        .isEqualTo(OrganizationActivated.TYPE);
+  }
+
+  @Test
+  void shouldRejectActivatingSuspendedOrganization() {
+    Organization organization = suspendedOrganization();
+
+    assertThatThrownBy(() -> organization.activate(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-04T10:00:00Z")
+    ))
+        .isInstanceOf(BusinessRuleViolationException.class)
+        .hasMessageContaining("SUSPENDED")
+        .satisfies(throwable -> {
+          BusinessRuleViolationException exception =
+              (BusinessRuleViolationException) throwable;
+
+          assertThat(exception.code())
+              .isEqualTo("ORGANIZATION_CANNOT_BE_ACTIVATED");
+
+          assertThat(exception.ruleName())
+              .isEqualTo("OrganizationMustBeActivatableRule");
+        });
+
+    assertThat(organization.status())
+        .isEqualTo(OrganizationStatus.SUSPENDED);
+
+    assertThat(organization.domainEvents()).isEmpty();
+  }
+
+  @Test
+  void shouldRejectActivatingAlreadyActiveOrganization() {
+    Organization organization = activeOrganization();
+
+    assertThatThrownBy(() -> organization.activate(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-04T10:00:00Z")
+    ))
+        .isInstanceOf(BusinessRuleViolationException.class)
+        .hasMessage("Organization is already active")
+        .satisfies(throwable -> {
+          BusinessRuleViolationException exception =
+              (BusinessRuleViolationException) throwable;
+
+          assertThat(exception.code())
+              .isEqualTo("ORGANIZATION_ALREADY_ACTIVE");
+
+          assertThat(exception.ruleName())
+              .isEqualTo("OrganizationMustBeActivatableRule");
+        });
+
+    assertThat(organization.status())
+        .isEqualTo(OrganizationStatus.ACTIVE);
+
+    assertThat(organization.domainEvents()).isEmpty();
+  }
+
+  @Test
+  void shouldRejectActivatingClosedOrganization() {
+    Organization organization = closedOrganization();
+
+    assertThatThrownBy(() -> organization.activate(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-04T10:00:00Z")
+    ))
+        .isInstanceOf(BusinessRuleViolationException.class)
+        .hasMessageContaining("CLOSED")
+        .satisfies(throwable -> {
+          BusinessRuleViolationException exception =
+              (BusinessRuleViolationException) throwable;
+
+          assertThat(exception.code())
+              .isEqualTo("ORGANIZATION_CANNOT_BE_ACTIVATED");
+
+          assertThat(exception.ruleName())
+              .isEqualTo("OrganizationMustBeActivatableRule");
+        });
+
+    assertThat(organization.status())
+        .isEqualTo(OrganizationStatus.CLOSED);
+
+    assertThat(organization.domainEvents()).isEmpty();
+  }
+
+  @Test
+  void shouldReinstateSuspendedOrganization() {
+    Organization organization = suspendedOrganization();
+
+    UUID eventId = UUID.fromString(
+        "c7e2a5d1-9b3f-4c8e-a6d2-1f0b3e5c7a92"
+    );
+
+    Instant reinstatedAt =
+        Instant.parse("2026-08-04T10:00:00Z");
+
+    organization.reinstate(eventId, reinstatedAt);
+
+    assertThat(organization.status())
+        .isEqualTo(OrganizationStatus.ACTIVE);
+
+    assertThat(organization.domainEvents())
+        .singleElement()
+        .isInstanceOf(OrganizationReinstated.class);
+
+    OrganizationReinstated event =
+        (OrganizationReinstated)
+            organization.domainEvents().getFirst();
+
+    assertThat(event.eventId()).isEqualTo(eventId);
+    assertThat(event.organizationId())
+        .isEqualTo(organization.id());
+    assertThat(event.tenantId())
+        .isEqualTo(organization.tenantId());
+    assertThat(event.occurredAt())
+        .isEqualTo(reinstatedAt);
+    assertThat(event.eventType())
+        .isEqualTo("organization.reinstated.v1");
+    assertThat(OrganizationReinstated.TYPE)
+        .isEqualTo("organization.reinstated.v1");
+  }
+
+  @Test
+  void shouldRejectReinstatingPendingOrganization() {
+    Organization organization = newOrganization();
+    organization.clearDomainEvents();
+
+    assertReinstateRejected(
+        organization,
+        "ORGANIZATION_CANNOT_BE_REINSTATED",
+        "Organization cannot be reinstated from status 'PENDING_ACTIVATION'"
+    );
+
+    assertThat(organization.status())
+        .isEqualTo(OrganizationStatus.PENDING_ACTIVATION);
+  }
+
+  @Test
+  void shouldRejectReinstatingClosedOrganization() {
+    Organization organization = closedOrganization();
+
+    assertReinstateRejected(
+        organization,
+        "ORGANIZATION_CANNOT_BE_REINSTATED",
+        "Organization cannot be reinstated from status 'CLOSED'"
+    );
+
+    assertThat(organization.status())
+        .isEqualTo(OrganizationStatus.CLOSED);
+  }
+
+  @Test
+  void shouldRejectReinstatingActiveOrganization() {
+    Organization organization = activeOrganization();
+
+    assertReinstateRejected(
+        organization,
+        "ORGANIZATION_ALREADY_ACTIVE",
+        "Organization is already active"
+    );
+
+    assertThat(organization.status())
+        .isEqualTo(OrganizationStatus.ACTIVE);
+  }
+
+  @Test
+  void shouldRejectNullEventIdOnReinstateBeforeCheckingRule() {
+    Organization organization = activeOrganization();
+
+    assertThatThrownBy(() -> organization.reinstate(
+        null,
+        Instant.parse("2026-08-04T10:00:00Z")
+    ))
+        .isExactlyInstanceOf(NullPointerException.class)
+        .hasMessage("Event id cannot be null");
+
+    assertThat(organization.status())
+        .isEqualTo(OrganizationStatus.ACTIVE);
+
+    assertThat(organization.domainEvents()).isEmpty();
+  }
+
+  @Test
+  void shouldRejectNullOccurredAtOnReinstateBeforeCheckingRule() {
+    Organization organization = activeOrganization();
+
+    assertThatThrownBy(() -> organization.reinstate(
+        UUID.randomUUID(),
+        null
+    ))
+        .isExactlyInstanceOf(NullPointerException.class)
+        .hasMessage("Occurred at cannot be null");
+
+    assertThat(organization.status())
+        .isEqualTo(OrganizationStatus.ACTIVE);
+
+    assertThat(organization.domainEvents()).isEmpty();
+  }
+
+  @Test
+  void shouldBehaveAsActiveOnceReinstated() {
+    Organization organization = suspendedOrganization();
+
+    organization.reinstate(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-04T10:00:00Z")
+    );
+
+    organization.clearDomainEvents();
+
+    organization.addStore(
+        new StoreId(UUID.randomUUID()),
+        new StoreCode("DAKAR-01"),
+        new StoreName("Magasin Dakar"),
+        UUID.randomUUID(),
+        Instant.parse("2026-08-04T11:00:00Z")
+    );
+
+    assertThat(organization.stores()).hasSize(2);
+
+    organization.suspend(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-04T12:00:00Z")
+    );
+
+    assertThat(organization.status())
+        .isEqualTo(OrganizationStatus.SUSPENDED);
+
+    organization.close(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-04T13:00:00Z")
+    );
+
+    assertThat(organization.status())
+        .isEqualTo(OrganizationStatus.CLOSED);
+  }
+
+  private static void assertReinstateRejected(
+      Organization organization,
+      String expectedCode,
+      String expectedMessage
+  ) {
+    assertThatThrownBy(() -> organization.reinstate(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-04T10:00:00Z")
+    ))
+        .isInstanceOf(BusinessRuleViolationException.class)
+        .hasMessage(expectedMessage)
+        .satisfies(throwable -> {
+          BusinessRuleViolationException exception =
+              (BusinessRuleViolationException) throwable;
+
+          assertThat(exception.code())
+              .isEqualTo(expectedCode);
+
+          assertThat(exception.ruleName())
+              .isEqualTo(
+                  "OrganizationMustBeSuspendedToBeReinstatedRule"
+              );
+        });
+
+    assertThat(organization.domainEvents()).isEmpty();
+  }
+
+  private static Organization suspendedOrganization() {
+    Organization organization = activeOrganization();
+
+    organization.suspend(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-03T09:00:00Z")
+    );
+
+    organization.clearDomainEvents();
+
+    return organization;
+  }
+
+  private static Organization closedOrganization() {
+    Organization organization = activeOrganization();
+
+    organization.close(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-03T10:00:00Z")
+    );
+
+    organization.clearDomainEvents();
+
+    return organization;
   }
 
   private static Organization restoreWithStores(

@@ -223,6 +223,50 @@ class ActivateOrganizationHandlerTest {
 
           assertThat(exception.code())
               .isEqualTo(
+                  "ORGANIZATION_ALREADY_ACTIVE"
+              );
+
+          assertThat(exception.ruleName())
+              .isEqualTo(
+                  "OrganizationMustBeActivatableRule"
+              );
+        });
+
+    assertThat(publisher.publishedEvents()).isEmpty();
+  }
+
+  @Test
+  void shouldRejectSuspendedOrganization() {
+    Organization organization = pendingOrganization();
+    organization.clearDomainEvents();
+    organization.activate(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-01T12:00:00Z")
+    );
+    organization.suspend(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-01T13:00:00Z")
+    );
+    organization.clearDomainEvents();
+    repository.add(organization);
+
+    assertThatThrownBy(
+        () -> handler.handle(
+            new ActivateOrganizationCommand(
+                new TenantId(TENANT_UUID),
+                ORGANIZATION_UUID
+            )
+        )
+    )
+        .isInstanceOf(
+            BusinessRuleViolationException.class
+        )
+        .satisfies(throwable -> {
+          BusinessRuleViolationException exception =
+              (BusinessRuleViolationException) throwable;
+
+          assertThat(exception.code())
+              .isEqualTo(
                   "ORGANIZATION_CANNOT_BE_ACTIVATED"
               );
 
@@ -233,6 +277,16 @@ class ActivateOrganizationHandlerTest {
         });
 
     assertThat(publisher.publishedEvents()).isEmpty();
+
+    Organization storedOrganization = repository
+        .findById(
+            new TenantId(TENANT_UUID),
+            new OrganizationId(ORGANIZATION_UUID)
+        )
+        .orElseThrow();
+
+    assertThat(storedOrganization.status())
+        .isEqualTo(OrganizationStatus.SUSPENDED);
   }
 
   @Test
