@@ -4,6 +4,7 @@ import com.zim.organization.application.command.AddStoreCommand;
 import com.zim.organization.application.result.AddStoreResult;
 
 import com.zim.organization.domain.event.StoreAdded;
+import com.zim.organization.domain.exception.InvalidValueException;
 import com.zim.organization.domain.model.Organization;
 import com.zim.organization.domain.model.OrganizationStatus;
 import com.zim.organization.domain.valueobject.*;
@@ -189,6 +190,95 @@ class AddStoreHandlerTest {
 
     assertThat(organization.stores()).hasSize(1);
     assertThat(organization.domainEvents()).isEmpty();
+  }
+
+  @Test
+  void shouldRejectDuplicateStoreCodeIgnoringCase() {
+    Organization organization = activeOrganization();
+    repository.add(organization);
+
+    assertThatThrownBy(() -> handler.handle(
+        new AddStoreCommand(
+            new TenantId(TENANT_UUID),
+            ORGANIZATION_UUID,
+            "thies-01",
+            "Magasin 2"
+        )
+    ))
+        .isInstanceOfSatisfying(
+            BusinessRuleViolationException.class,
+            exception -> assertThat(exception.code())
+                .isEqualTo("STORE_CODE_ALREADY_EXISTS")
+        );
+
+    assertThat(repository.saveCount()).isZero();
+    assertThat(publisher.publishedEvents()).isEmpty();
+    assertThat(organization.stores()).hasSize(1);
+  }
+
+  @Test
+  void shouldRejectCodeOfInactiveStore() {
+    Organization organization = activeOrganization();
+    StoreId dakarId = new StoreId(UUID.randomUUID());
+    organization.addStore(
+        dakarId,
+        new StoreCode("DAKAR-01"),
+        new StoreName("Magasin Dakar"),
+        UUID.randomUUID(),
+        Instant.parse("2026-08-01T13:00:00Z")
+    );
+    organization.deactivateStore(
+        dakarId,
+        UUID.randomUUID(),
+        Instant.parse("2026-08-01T14:00:00Z")
+    );
+    organization.clearDomainEvents();
+    repository.add(organization);
+
+    assertThatThrownBy(() -> handler.handle(
+        new AddStoreCommand(
+            new TenantId(TENANT_UUID),
+            ORGANIZATION_UUID,
+            "DAKAR-01",
+            "Magasin Dakar bis"
+        )
+    ))
+        .isInstanceOfSatisfying(
+            BusinessRuleViolationException.class,
+            exception -> assertThat(exception.code())
+                .isEqualTo("STORE_CODE_ALREADY_EXISTS")
+        );
+
+    assertThat(repository.saveCount()).isZero();
+    assertThat(publisher.publishedEvents()).isEmpty();
+    assertThat(organization.stores()).hasSize(2);
+  }
+
+  @Test
+  void shouldRejectInvalidStoreNameBeforeCheckingOrganizationStatus() {
+    // Value objects are built before the rules run: a name that is too
+    // short once trimmed wins over the "must be active" rule.
+    Organization organization = pendingOrganization();
+    organization.clearDomainEvents();
+    repository.add(organization);
+
+    assertThatThrownBy(() -> handler.handle(
+        new AddStoreCommand(
+            new TenantId(TENANT_UUID),
+            ORGANIZATION_UUID,
+            "DAKAR-01",
+            " a"
+        )
+    ))
+        .isInstanceOfSatisfying(
+            InvalidValueException.class,
+            exception -> assertThat(exception.code())
+                .isEqualTo("INVALID_STORE_NAME")
+        );
+
+    assertThat(repository.saveCount()).isZero();
+    assertThat(publisher.publishedEvents()).isEmpty();
+    assertThat(organization.stores()).hasSize(1);
   }
 
   @Test

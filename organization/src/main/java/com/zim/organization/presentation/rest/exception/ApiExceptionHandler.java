@@ -11,9 +11,11 @@ import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.time.Instant;
 import java.util.stream.Collectors;
@@ -39,6 +41,37 @@ public class ApiExceptionHandler {
         .collect(Collectors.joining("; "));
 
     return error(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", message);
+  }
+
+  /**
+   * A path variable could not be converted (e.g. a malformed organization
+   * id). Only the parameter name is reported; the submitted value is never
+   * echoed.
+   */
+  @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+  public ResponseEntity<ApiErrorResponse> handleArgumentTypeMismatch(
+      MethodArgumentTypeMismatchException exception
+  ) {
+    return error(
+        HttpStatus.BAD_REQUEST,
+        "VALIDATION_FAILED",
+        exception.getName() + ": must be a valid UUID"
+    );
+  }
+
+  /**
+   * The body is missing, is not valid JSON or holds a value of the wrong
+   * type. The parser's message is not returned, since it quotes the input.
+   */
+  @ExceptionHandler(HttpMessageNotReadableException.class)
+  public ResponseEntity<ApiErrorResponse> handleUnreadableMessage(
+      HttpMessageNotReadableException exception
+  ) {
+    return error(
+        HttpStatus.BAD_REQUEST,
+        "VALIDATION_FAILED",
+        "Request body is missing or malformed"
+    );
   }
 
   /**

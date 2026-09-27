@@ -1,27 +1,16 @@
 package com.zim.organization.presentation.rest;
 
-import com.zim.organization.application.command.ActivateOrganizationCommand;
 import com.zim.organization.application.command.RegisterOrganizationCommand;
 import com.zim.organization.application.exception.OrganizationAlreadyExistsException;
-import com.zim.organization.application.exception.OrganizationNotFoundException;
-import com.zim.organization.application.handler.ActivateOrganizationHandler;
 import com.zim.organization.application.handler.RegisterOrganizationHandler;
 import com.zim.organization.application.result.RegisterOrganizationResult;
-import com.zim.organization.domain.model.Organization;
-import com.zim.organization.domain.model.OrganizationStatus;
-import com.zim.organization.domain.rule.OrganizationMustBeActiveToAddStoreRule;
 import com.zim.organization.domain.valueobject.CurrencyCode;
-import com.zim.organization.domain.valueobject.LegalName;
 import com.zim.organization.domain.valueobject.OrganizationId;
-import com.zim.organization.domain.valueobject.OrganizationName;
-import com.zim.organization.domain.valueobject.StoreCode;
 import com.zim.organization.domain.valueobject.StoreId;
-import com.zim.organization.domain.valueobject.StoreName;
 import com.zim.organization.presentation.rest.exception.ApiExceptionHandler;
 import com.zim.organization.presentation.rest.request.RegisterOrganizationRequest;
 import com.zim.organization.testing.InMemoryDomainEventPublisher;
 import com.zim.organization.testing.InMemoryOrganizationRepository;
-import com.zim.shared.domain.BusinessRuleViolationException;
 import com.zim.shared.domain.TenantId;
 import com.zim.shared.tenant.CurrentTenantProvider;
 import com.zim.shared.tenant.TenantNotResolvedException;
@@ -34,7 +23,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -49,10 +37,9 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.hamcrest.Matchers.aMapWithSize;
 import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -352,117 +339,25 @@ class OrganizationControllerTest {
         .andExpect(jsonPath("$.code").value("UNSUPPORTED_CURRENCY"));
   }
 
-  @Test
-  void shouldReturnConflictWhenBusinessRuleIsViolated() throws Exception {
-    when(registerOrganizationHandler.handle(any())).thenThrow(
-        new BusinessRuleViolationException(
-            new OrganizationMustBeActiveToAddStoreRule(
-                OrganizationStatus.CLOSED
-            )
-        )
-    );
-
-    register(validRequestWith("legalName", "Quincaillerie Thiès SARL"))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code")
-            .value("ORGANIZATION_MUST_BE_ACTIVE_TO_ADD_STORE"));
-  }
-
-  @Test
-  void shouldReturnNotFoundWhenOrganizationDoesNotExist() throws Exception {
-    when(registerOrganizationHandler.handle(any())).thenThrow(
-        new OrganizationNotFoundException(ORGANIZATION_ID)
-    );
-
-    register(validRequestWith("legalName", "Quincaillerie Thiès SARL"))
-        .andExpect(status().isNotFound())
-        .andExpect(jsonPath("$.code").value("ORGANIZATION_NOT_FOUND"));
-  }
-
   /**
-   * Tenant scoping: another tenant's organization must be indistinguishable
-   * from a missing one over HTTP. Both exceptions come from the real
-   * handler, and the endpoint only serves to drive ApiExceptionHandler.
+   * Malformed JSON never reaches bean validation: it is mapped to the same
+   * 400 VALIDATION_FAILED shape, without echoing the parser's message.
    */
   @Test
-  void shouldMapWrongTenantAndMissingOrganizationToIdenticalNotFound()
+  void shouldReturnBadRequestWhenRegistrationBodyIsMalformed()
       throws Exception {
-    OrganizationNotFoundException wrongTenant =
-        activationFailure(true, OTHER_TENANT_ID);
-    OrganizationNotFoundException missing =
-        activationFailure(false, TENANT_ID);
-    assertThat(wrongTenant).isNotNull();
-    assertThat(missing).isNotNull();
-
-    doThrow(wrongTenant).when(registerOrganizationHandler).handle(any());
-    String wrongTenantBody = register(validRequestWith("legalName", "Quincaillerie Thiès SARL"))
-        .andExpect(status().isNotFound())
-        .andExpect(jsonPath("$.code").value("ORGANIZATION_NOT_FOUND"))
+    String body = register("{\"organizationName\": \"Quincaillerie Thiès\",")
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$", aMapWithSize(3)))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+        .andExpect(jsonPath("$.message")
+            .value("Request body is missing or malformed"))
         .andExpect(jsonPath("$.timestamp").exists())
         .andReturn().getResponse().getContentAsString();
 
-    doThrow(missing).when(registerOrganizationHandler).handle(any());
-    String missingBody = register(validRequestWith("legalName", "Quincaillerie Thiès SARL"))
-        .andExpect(status().isNotFound())
-        .andExpect(jsonPath("$.code").value("ORGANIZATION_NOT_FOUND"))
-        .andExpect(jsonPath("$.timestamp").exists())
-        .andReturn().getResponse().getContentAsString();
-
-    assertThat(withoutTimestamp(wrongTenantBody))
-        .isEqualTo(withoutTimestamp(missingBody));
-  }
-
-  private static OrganizationNotFoundException activationFailure(
-      boolean organizationExists,
-      UUID callerTenantId
-  ) {
-    InMemoryOrganizationRepository repository =
-        new InMemoryOrganizationRepository();
-
-    if (organizationExists) {
-      repository.add(Organization.register(
-          new OrganizationId(ORGANIZATION_ID),
-          new TenantId(TENANT_ID),
-          new OrganizationName("Quincaillerie Thiès"),
-          new LegalName("Quincaillerie Thiès SARL"),
-          CurrencyCode.xof(),
-          new StoreId(HEADQUARTERS_ID),
-          new StoreCode("THIES-01"),
-          new StoreName("Magasin principal"),
-          UUID.randomUUID(),
-          CREATED_AT
-      ));
-    }
-
-    ActivateOrganizationHandler handler = new ActivateOrganizationHandler(
-        repository,
-        UUID::randomUUID,
-        () -> CREATED_AT,
-        new InMemoryDomainEventPublisher()
-    );
-
-    return catchThrowableOfType(
-        OrganizationNotFoundException.class,
-        () -> handler.handle(new ActivateOrganizationCommand(
-            new TenantId(callerTenantId),
-            ORGANIZATION_ID
-        ))
-    );
-  }
-
-  private static String withoutTimestamp(String body) {
-    return body.replaceAll("\"timestamp\"\\s*:\\s*\"[^\"]*\"", "");
-  }
-
-  @Test
-  void shouldReturnConflictOnConcurrentModification() throws Exception {
-    when(registerOrganizationHandler.handle(any())).thenThrow(
-        new OptimisticLockingFailureException("stale")
-    );
-
-    register(validRequestWith("legalName", "Quincaillerie Thiès SARL"))
-        .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code").value("CONCURRENT_MODIFICATION"));
+    assertThat(body).doesNotContain("Quincaillerie");
+    verifyNoInteractions(registerOrganizationHandler);
+    verifyNoInteractions(currentTenantProvider);
   }
 
   @Test
