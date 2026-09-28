@@ -27,17 +27,23 @@ import com.zim.organization.domain.valueobject.StoreName;
 import com.zim.organization.presentation.rest.exception.ApiExceptionHandler;
 import com.zim.organization.presentation.rest.request.AddStoreRequest;
 import com.zim.organization.presentation.rest.request.ChangeHeadquartersRequest;
+import com.zim.organization.testing.DefaultLocaleExtension;
 import com.zim.organization.testing.InMemoryDomainEventPublisher;
 import com.zim.organization.testing.InMemoryOrganizationRepository;
+import com.zim.organization.testing.LocaleScenario;
 import com.zim.shared.domain.BusinessRuleViolationException;
 import com.zim.shared.domain.TenantId;
 import com.zim.shared.tenant.CurrentTenantProvider;
 import com.zim.shared.tenant.TenantNotResolvedException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,10 +61,10 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.aMapWithSize;
-import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.times;
@@ -75,6 +81,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 // The test application does not component-scan, so the web slice has to be
 // imported explicitly.
 @Import({TenantOrganizationController.class, ApiExceptionHandler.class})
+@ExtendWith(DefaultLocaleExtension.class)
 class TenantOrganizationControllerTest {
 
   private static final UUID ORGANIZATION_ID =
@@ -262,31 +269,47 @@ class TenantOrganizationControllerTest {
   // --- 400 -----------------------------------------------------------------
 
   @ParameterizedTest
-  @CsvSource({
-      "storeCode, A",
-      "storeCode, THIES 01",
-      "storeCode, ''",
-      "storeCode, '   '",
-      "storeName, X",
-      "storeName, ''",
-      "storeName, '   '"
-  })
+  @MethodSource("invalidStoreFieldsInNonEnglishLocales")
   void shouldReturnBadRequestWhenFieldIsInvalid(
+      LocaleScenario locale,
       String field,
-      String value
+      String value,
+      String expectedMessage
   ) throws Exception {
+    locale.activate();
     String body = field.equals("storeCode")
         ? requestBody(value, "Magasin 2")
         : requestBody("THIES-02", value);
 
-    addStore(ORGANIZATION_ID.toString(), body)
+    addStore(locale, ORGANIZATION_ID.toString(), body)
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$", aMapWithSize(3)))
         .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
-        .andExpect(jsonPath("$.message").value(startsWith(field + ": ")))
+        .andExpect(jsonPath("$.message").value(expectedMessage))
         .andExpect(jsonPath("$.timestamp").exists());
 
     verifyNoInteractions(addStoreHandler);
+  }
+
+  /**
+   * The {@code @Size} bounds are never formatted with the default locale:
+   * under ar-EG, {@code String.format} would print Arabic-Indic digits.
+   */
+  @ParameterizedTest
+  @NullSource
+  @ValueSource(strings = "ar-EG")
+  void shouldRenderStoreNameSizeBoundsWithAsciiDigitsUnderArabicLocale(
+      String acceptLanguage
+  ) throws Exception {
+    LocaleScenario locale =
+        new LocaleScenario(LocaleScenario.ARABIC_EGYPT, acceptLanguage);
+    locale.activate();
+
+    addStore(locale, ORGANIZATION_ID.toString(), requestBody("THIES-02", "X"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+        .andExpect(jsonPath("$.message")
+            .value("storeName: size must be between 2 and 120"));
   }
 
   @Test
@@ -323,21 +346,18 @@ class TenantOrganizationControllerTest {
   }
 
   @ParameterizedTest
-  @CsvSource({
-      "storeCode, LEAK 4711",
-      "storeName, "
-          + "leak4711leak4711leak4711leak4711leak4711leak4711leak4711leak4711"
-          + "leak4711leak4711leak4711leak4711leak4711leak4711leak4711leak4711"
-  })
+  @MethodSource("leakingValuesInNonEnglishLocales")
   void shouldNotEchoSubmittedValueInValidationMessage(
+      LocaleScenario locale,
       String field,
       String value
   ) throws Exception {
+    locale.activate();
     String body = field.equals("storeCode")
         ? requestBody(value, "Magasin 2")
         : requestBody("THIES-02", value);
 
-    String response = addStore(ORGANIZATION_ID.toString(), body)
+    String response = addStore(locale, ORGANIZATION_ID.toString(), body)
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
         .andReturn().getResponse().getContentAsString();
@@ -631,14 +651,22 @@ class TenantOrganizationControllerTest {
   // --- 400 -----------------------------------------------------------------
 
   @ParameterizedTest
-  @ValueSource(strings = {"{}", "{\"storeId\": null}"})
-  void shouldReturnBadRequestWhenStoreIdIsMissingOrNull(String body)
-      throws Exception {
-    changeHeadquarters(ORGANIZATION_ID.toString(), body)
+  @MethodSource("missingStoreIdsInNonEnglishLocales")
+  void shouldReturnBadRequestWhenStoreIdIsMissingOrNull(
+      LocaleScenario locale,
+      String body
+  ) throws Exception {
+    locale.activate();
+
+    mockMvc.perform(locale.applyTo(
+            put(HEADQUARTERS_PATH, ORGANIZATION_ID.toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body)
+        ))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$", aMapWithSize(3)))
         .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
-        .andExpect(jsonPath("$.message").value(startsWith("storeId: ")))
+        .andExpect(jsonPath("$.message").value("storeId: must not be null"))
         .andExpect(jsonPath("$.timestamp").exists());
 
     verifyNoInteractions(changeHeadquartersHandler);
@@ -1570,6 +1598,53 @@ class TenantOrganizationControllerTest {
             .contentType(MediaType.APPLICATION_JSON)
             .content(body)
     );
+  }
+
+  private ResultActions addStore(
+      LocaleScenario locale,
+      String id,
+      String body
+  ) throws Exception {
+    return mockMvc.perform(locale.applyTo(
+        post(STORES_PATH, id)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(body)
+    ));
+  }
+
+  /** The Exact messages table of T5f, for the add store request. */
+  static Stream<Arguments> invalidStoreFieldsInNonEnglishLocales() {
+    String storeCodeFormat = "storeCode: must match the required format";
+    String storeNameSize = "storeName: size must be between 2 and 120";
+    return LocaleScenario.crossNonEnglish(Stream.of(
+        Arguments.of("storeCode", "THIES 09", storeCodeFormat),
+        Arguments.of("storeCode", "A", storeCodeFormat),
+        Arguments.of("storeCode", "THIES 01", storeCodeFormat),
+        Arguments.of("storeCode", "LEAK 4711", storeCodeFormat),
+        Arguments.of("storeCode", "",
+            storeCodeFormat + "; storeCode: must not be blank"),
+        Arguments.of("storeCode", "   ",
+            storeCodeFormat + "; storeCode: must not be blank"),
+        Arguments.of("storeName", "X", storeNameSize),
+        Arguments.of("storeName", "x".repeat(128), storeNameSize),
+        Arguments.of("storeName", "",
+            "storeName: must not be blank; " + storeNameSize),
+        Arguments.of("storeName", "   ", "storeName: must not be blank")
+    ));
+  }
+
+  static Stream<Arguments> leakingValuesInNonEnglishLocales() {
+    return LocaleScenario.crossNonEnglish(Stream.of(
+        Arguments.of("storeCode", "LEAK 4711"),
+        Arguments.of("storeName", "leak4711".repeat(16))
+    ));
+  }
+
+  static Stream<Arguments> missingStoreIdsInNonEnglishLocales() {
+    return LocaleScenario.crossNonEnglish(Stream.of(
+        Arguments.of("{}"),
+        Arguments.of("{\"storeId\": null}")
+    ));
   }
 
   private static String requestBody(String storeCode, String storeName) {
