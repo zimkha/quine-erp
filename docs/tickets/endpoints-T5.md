@@ -74,6 +74,7 @@
 | Status | Code | When |
 |---|---|---|
 | 400 | `VALIDATION_FAILED` | Bean validation fails. **New in T5a:** also a malformed path UUID and a malformed or missing JSON body. The messages are fixed: `"<param>: must be a valid UUID"` and `"Request body is missing or malformed"`. Raw input is never echoed. |
+| | | **Bean validation text (T5f):** `"<field>: <text>"` with the fixed English texts `must not be blank` (`@NotBlank`), `must not be null` (`@NotNull`), `size must be between {min} and {max}` (`@Size`), `must match the required format` (`@Pattern`), and `is invalid` for anything else. Parts are sorted and deduplicated. Built from the constraint type, never locale-resolved. See `docs/tickets/validation-message-locale.md`. |
 | 401 | `TENANT_NOT_RESOLVED` | The provider throws. Header `WWW-Authenticate: Bearer realm="quine-erp"`. The handler is never called. |
 | 404 | `ORGANIZATION_NOT_FOUND` | The organization is missing **or** belongs to another tenant. Bodies are identical apart from `timestamp`. |
 | 409 | rule code (per ticket) | `BusinessRuleViolationException` |
@@ -86,6 +87,7 @@
 - To another tenant, an organization it doesn't own is indistinguishable from a missing one. A 409 is never returned for another tenant's organization.
 
 **Conventions:**
+- **Error `message` is developer-facing English (T5f, PO 2026-09-28):** clients must branch only on `code`, never parse `message`. The server never localizes errors and ignores `Accept-Language` for them. Localized end-user text is the client's job, mapping `code`.
 - **Repeated actions:** a repeat returns its 409 "already" code. Clients treat `STORE_IS_ALREADY_HEADQUARTERS`, `STORE_ALREADY_INACTIVE`, `ORGANIZATION_ALREADY_CLOSED` and `ORGANIZATION_ALREADY_ACTIVE` as "target state already reached". `…_CANNOT_BE_…` codes (e.g. `ORGANIZATION_CANNOT_BE_CLOSED`, `ORGANIZATION_CANNOT_BE_ACTIVATED`) mean the action is refused from the current status, and must not be treated as success. No T5 endpoint is a silent no-op.
 - **No `tenantId` in responses:** no T5 response echoes it.
 - **Controllers:** tenant-scoped endpoints live in `TenantOrganizationController` (`presentation.rest`). `OrganizationController` keeps register only and doesn't inject `CurrentTenantProvider`.
