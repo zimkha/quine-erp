@@ -3,7 +3,7 @@
 - **Status:** written by the BA against `main` at `c035c0d`, after T1–T4 were merged, and validated by the Architect. The Architect's changes are already applied to the ticket text below.
   - T5a, T5b and T5c are validated with changes.
   - T5d is validated with changes. **Its merge blockers are resolved** (product owner, 2026-09-28: the tenant closes, and no confirmation is needed).
-  - T5e is **blocked** on product-owner decision 2. Its domain prerequisite, T5e-0 (`docs/tickets/domain-activate-reinstate-split.md`), is validated.
+  - T5e is **unblocked** (product owner, 2026-10-01: the tenant activates). Its domain prerequisite, T5e-0 (`docs/tickets/domain-activate-reinstate-split.md`), is merged.
 - **Source:** the "Later tickets" section of `docs/tickets/tenant-scoping-T1-T4.md`.
 - **Workflow:** BA → Architect → Developer → Lead Developer (see `CLAUDE.md`).
 
@@ -354,11 +354,11 @@
 
 ---
 
-## T5e: Activate my organization (BLOCKED on product-owner decision 2)
+## T5e: Activate my organization
 
-**User story (valid only if decision 2 = "the tenant activates").** As a tenant, I want to activate my newly registered organization, so that I can start adding stores and trading.
+**User story.** As a tenant, I want to activate my newly registered organization, so that I can start adding stores and trading.
 
-**Status:** **blocked.** Don't design or implement this until decision 2 is answered.
+**Status:** **unblocked.** Product owner, 2026-10-01: decision 2 is "the tenant activates". The Reinstate command and handler still come with their actor in the suspension-lifecycle ticket or T9.
 
 **Scope:**
 - `POST /api/organizations/{id}/activation` → `ActivateOrganizationCommand(tenant, id)`.
@@ -425,4 +425,4 @@ All resolved: see **Architect decisions** 1–12 at the top of this file.
 | T5b change headquarters | yes, after T5a | yes | same |
 | T5c deactivate store | yes, after T5a | yes | same |
 | T5d close | yes, after T5a | yes (both blockers resolved 2026-09-28) | same |
-| T5e activate | **blocked on decision 2**; T5e-0 must be merged first | no | not applicable |
+| T5e activate | yes (T5e-0 merged, decision 2 resolved 2026-10-01) | yes | after bootstrap and T7 |

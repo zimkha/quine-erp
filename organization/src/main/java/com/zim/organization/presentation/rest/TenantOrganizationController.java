@@ -1,19 +1,23 @@
 package com.zim.organization.presentation.rest;
 
+import com.zim.organization.application.command.ActivateOrganizationCommand;
 import com.zim.organization.application.command.AddStoreCommand;
 import com.zim.organization.application.command.ChangeHeadquartersCommand;
 import com.zim.organization.application.command.CloseOrganizationCommand;
 import com.zim.organization.application.command.DeactivateStoreCommand;
+import com.zim.organization.application.handler.ActivateOrganizationHandler;
 import com.zim.organization.application.handler.AddStoreHandler;
 import com.zim.organization.application.handler.ChangeHeadquartersHandler;
 import com.zim.organization.application.handler.CloseOrganizationHandler;
 import com.zim.organization.application.handler.DeactivateStoreHandler;
+import com.zim.organization.application.result.ActivateOrganizationResult;
 import com.zim.organization.application.result.AddStoreResult;
 import com.zim.organization.application.result.ChangeHeadquartersResult;
 import com.zim.organization.application.result.CloseOrganizationResult;
 import com.zim.organization.application.result.DeactivateStoreResult;
 import com.zim.organization.presentation.rest.request.AddStoreRequest;
 import com.zim.organization.presentation.rest.request.ChangeHeadquartersRequest;
+import com.zim.organization.presentation.rest.response.ActivateOrganizationResponse;
 import com.zim.organization.presentation.rest.response.AddStoreResponse;
 import com.zim.organization.presentation.rest.response.ChangeHeadquartersResponse;
 import com.zim.organization.presentation.rest.response.CloseOrganizationResponse;
@@ -48,13 +52,15 @@ public class TenantOrganizationController {
   private final ChangeHeadquartersHandler changeHeadquartersHandler;
   private final DeactivateStoreHandler deactivateStoreHandler;
   private final CloseOrganizationHandler closeOrganizationHandler;
+  private final ActivateOrganizationHandler activateOrganizationHandler;
 
   public TenantOrganizationController(
       CurrentTenantProvider currentTenantProvider,
       AddStoreHandler addStoreHandler,
       ChangeHeadquartersHandler changeHeadquartersHandler,
       DeactivateStoreHandler deactivateStoreHandler,
-      CloseOrganizationHandler closeOrganizationHandler
+      CloseOrganizationHandler closeOrganizationHandler,
+      ActivateOrganizationHandler activateOrganizationHandler
   ) {
     this.currentTenantProvider = Objects.requireNonNull(
         currentTenantProvider,
@@ -75,6 +81,10 @@ public class TenantOrganizationController {
     this.closeOrganizationHandler = Objects.requireNonNull(
         closeOrganizationHandler,
         "Close organization handler cannot be null"
+    );
+    this.activateOrganizationHandler = Objects.requireNonNull(
+        activateOrganizationHandler,
+        "Activate organization handler cannot be null"
     );
   }
 
@@ -194,6 +204,34 @@ public class TenantOrganizationController {
         result.organizationId(),
         result.status(),
         result.closedAt()
+    );
+
+    return ResponseEntity.ok(response);
+  }
+
+  /**
+   * Activates the tenant's newly registered organization. There is no
+   * request body; any body sent is ignored. Only a
+   * {@code PENDING_ACTIVATION} organization can be activated: a repeat is
+   * answered with 409 {@code ORGANIZATION_ALREADY_ACTIVE}, which clients
+   * treat as "target state already reached", and a {@code SUSPENDED} or
+   * {@code CLOSED} one with 409 {@code ORGANIZATION_CANNOT_BE_ACTIVATED}.
+   * The response does not echo the tenant.
+   */
+  @PostMapping("/activation")
+  public ResponseEntity<ActivateOrganizationResponse> activateOrganization(
+      @PathVariable("id") UUID id
+  ) {
+    TenantId tenantId = currentTenantProvider.currentTenant();
+
+    ActivateOrganizationResult result = activateOrganizationHandler.handle(
+        new ActivateOrganizationCommand(tenantId, id)
+    );
+
+    ActivateOrganizationResponse response = new ActivateOrganizationResponse(
+        result.organizationId(),
+        result.status(),
+        result.activatedAt()
     );
 
     return ResponseEntity.ok(response);
