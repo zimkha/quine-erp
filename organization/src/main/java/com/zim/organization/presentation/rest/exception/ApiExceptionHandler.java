@@ -29,6 +29,12 @@ public class ApiExceptionHandler {
 
   private static final String WWW_AUTHENTICATE_VALUE = "Bearer realm=\"quine-erp\"";
 
+  /**
+   * Each part is {@code "<field>: <text>"} with a fixed English text from
+   * {@link FieldErrorMessages}, never the validator's localized message.
+   * Parts are sorted in plain {@code String} order because the raw field
+   * error order varies between identical requests.
+   */
   @ExceptionHandler(MethodArgumentNotValidException.class)
   public ResponseEntity<ApiErrorResponse> handleInvalidRequest(
       MethodArgumentNotValidException exception
@@ -36,7 +42,8 @@ public class ApiExceptionHandler {
     String message = exception.getBindingResult()
         .getFieldErrors()
         .stream()
-        .map(error -> error.getField() + ": " + error.getDefaultMessage())
+        .map(error -> error.getField() + ": " + FieldErrorMessages.text(error))
+        .distinct()
         .sorted()
         .collect(Collectors.joining("; "));
 

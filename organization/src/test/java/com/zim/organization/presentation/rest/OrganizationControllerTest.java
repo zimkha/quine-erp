@@ -9,15 +9,20 @@ import com.zim.organization.domain.valueobject.OrganizationId;
 import com.zim.organization.domain.valueobject.StoreId;
 import com.zim.organization.presentation.rest.exception.ApiExceptionHandler;
 import com.zim.organization.presentation.rest.request.RegisterOrganizationRequest;
+import com.zim.organization.testing.DefaultLocaleExtension;
 import com.zim.organization.testing.InMemoryDomainEventPublisher;
 import com.zim.organization.testing.InMemoryOrganizationRepository;
+import com.zim.organization.testing.LocaleScenario;
 import com.zim.shared.domain.TenantId;
 import com.zim.shared.tenant.CurrentTenantProvider;
 import com.zim.shared.tenant.TenantNotResolvedException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -32,13 +37,14 @@ import java.lang.reflect.RecordComponent;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.aMapWithSize;
-import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -51,6 +57,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 // The test application does not component-scan, so the web slice has to be
 // imported explicitly.
 @Import({OrganizationController.class, ApiExceptionHandler.class})
+@ExtendWith(DefaultLocaleExtension.class)
 class OrganizationControllerTest {
 
   private static final UUID ORGANIZATION_ID =
@@ -230,9 +237,16 @@ class OrganizationControllerTest {
     verify(registerOrganizationHandler)
         .handle(any());
   }
-  @Test
-  void shouldReturnBadRequestWhenRegistrationRequestIsInvalid()
-      throws Exception {
+  /**
+   * Every field is invalid; the message pins every part, sorted by field
+   * name then text (AC12), whatever the locale.
+   */
+  @ParameterizedTest
+  @MethodSource("nonEnglishLocales")
+  void shouldReturnBadRequestWhenRegistrationRequestIsInvalid(
+      LocaleScenario locale
+  ) throws Exception {
+    locale.activate();
 
     String request = """
       {
@@ -244,19 +258,28 @@ class OrganizationControllerTest {
       }
       """;
 
-    mockMvc.perform(
-            post("/api/organizations")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(request)
-        )
+    register(locale, request)
         .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        .andExpect(jsonPath("$", aMapWithSize(3)))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+        .andExpect(jsonPath("$.message").value(
+            "currencyCode: size must be between 3 and 3; "
+                + "headquartersCode: must match the required format; "
+                + "headquartersCode: must not be blank; "
+                + "headquartersName: must not be blank; "
+                + "headquartersName: size must be between 2 and 120; "
+                + "legalName: must not be blank; "
+                + "legalName: size must be between 2 and 160; "
+                + "organizationName: must not be blank; "
+                + "organizationName: size must be between 2 and 120"
+        ));
 
     verify(
         registerOrganizationHandler,
         org.mockito.Mockito.never()
     ).handle(any());
   }
+
   @Test
   void shouldReturnConflictWhenLegalNameAlreadyExists()
       throws Exception {
@@ -299,27 +322,45 @@ class OrganizationControllerTest {
   }
 
   @ParameterizedTest
-  @CsvSource({
-      "headquartersCode, A",
-      "headquartersCode, THIES 01",
-      "organizationName, X",
-      "legalName, Y",
-      "headquartersName, Z"
-  })
+  @MethodSource("invalidFieldsInNonEnglishLocales")
   void shouldReturnBadRequestWhenFieldDoesNotMatchDomainFormat(
+      LocaleScenario locale,
       String field,
-      String value
+      String value,
+      String expectedMessage
   ) throws Exception {
-    register(validRequestWith(field, value))
+    locale.activate();
+
+    register(locale, validRequestWith(field, value))
         .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$", aMapWithSize(3)))
         .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
-        .andExpect(jsonPath("$.message").value(
-            startsWith(field + ": ")
-        ))
+        .andExpect(jsonPath("$.message").value(expectedMessage))
         .andExpect(jsonPath("$.timestamp").exists());
 
     verify(registerOrganizationHandler, org.mockito.Mockito.never())
         .handle(any());
+  }
+
+  /**
+   * The {@code @Size} bounds are never formatted with the default locale:
+   * under ar-EG, {@code String.format} would print Arabic-Indic digits.
+   */
+  @ParameterizedTest
+  @NullSource
+  @ValueSource(strings = "ar-EG")
+  void shouldRenderSizeBoundsWithAsciiDigitsUnderArabicLocale(
+      String acceptLanguage
+  ) throws Exception {
+    LocaleScenario locale =
+        new LocaleScenario(LocaleScenario.ARABIC_EGYPT, acceptLanguage);
+    locale.activate();
+
+    register(locale, validRequestWith("legalName", "Y"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+        .andExpect(jsonPath("$.message")
+            .value("legalName: size must be between 2 and 160"));
   }
 
   @ParameterizedTest
@@ -382,6 +423,50 @@ class OrganizationControllerTest {
             .contentType(MediaType.APPLICATION_JSON)
             .content(body)
     );
+  }
+
+  private ResultActions register(LocaleScenario locale, String body)
+      throws Exception {
+    return mockMvc.perform(locale.applyTo(
+        post("/api/organizations")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(body)
+    ));
+  }
+
+  static List<LocaleScenario> nonEnglishLocales() {
+    return LocaleScenario.nonEnglish();
+  }
+
+  /** The Exact messages table of T5f, for the register request. */
+  static Stream<Arguments> invalidFieldsInNonEnglishLocales() {
+    return LocaleScenario.crossNonEnglish(Stream.of(
+        Arguments.of("headquartersCode", "A",
+            "headquartersCode: must match the required format"),
+        Arguments.of("headquartersCode", "THIES 01",
+            "headquartersCode: must match the required format"),
+        Arguments.of("organizationName", "X",
+            "organizationName: size must be between 2 and 120"),
+        Arguments.of("legalName", "Y",
+            "legalName: size must be between 2 and 160"),
+        Arguments.of("headquartersName", "Z",
+            "headquartersName: size must be between 2 and 120"),
+        Arguments.of("currencyCode", "XO",
+            "currencyCode: size must be between 3 and 3"),
+        Arguments.of("currencyCode", "XOFF",
+            "currencyCode: size must be between 3 and 3"),
+        Arguments.of("organizationName", "   ",
+            "organizationName: must not be blank"),
+        Arguments.of("legalName", "   ",
+            "legalName: must not be blank"),
+        Arguments.of("currencyCode", "   ",
+            "currencyCode: must not be blank"),
+        Arguments.of("headquartersName", "   ",
+            "headquartersName: must not be blank"),
+        Arguments.of("headquartersCode", "   ",
+            "headquartersCode: must match the required format; "
+                + "headquartersCode: must not be blank")
+    ));
   }
 
   private static String validRequestWith(String field, String value) {

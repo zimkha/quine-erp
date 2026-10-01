@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [],
+    "deny": [
+      "Bash(rm -f *)",
+      "Bash(rm *)"
+    ],
+    "ask": [
+      "Bash(git push *)"
+    ],
+    "defaultMode": "default"
+  }
+}
