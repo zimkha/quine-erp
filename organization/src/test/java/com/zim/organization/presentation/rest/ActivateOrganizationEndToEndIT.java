@@ -143,6 +143,7 @@ class ActivateOrganizationEndToEndIT {
     RegisterOrganizationResult registered = register();
     tenantProvider.set(new TenantId(registered.tenantId()));
     UUID organizationId = registered.organizationId();
+    // No handler suspends yet, so the row is moved to SUSPENDED directly.
     jdbcTemplate.update(
         "UPDATE organization.organizations SET status = 'SUSPENDED' "
             + "WHERE id = ?",
