@@ -1,0 +1,19 @@
+spring:
+  datasource:
+    url: ${QUINE_DB_URL:jdbc:postgresql://localhost:15432/quine}
+    username: ${QUINE_DB_USER:quine}
+    password: ${QUINE_DB_PASSWORD:quine}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: organization
+  flyway:
+    enabled: true
+    locations: classpath:db/migration/organization
+    schemas: organization
+    default-schema: organization
+
+server:
+  port: ${QUINE_PORT:18080}
