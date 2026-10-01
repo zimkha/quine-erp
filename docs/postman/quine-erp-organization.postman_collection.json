@@ -1,0 +1,2168 @@
+{
+  "info": {
+    "_postman_id": "606c13be-547c-4acd-b383-a9c2d7db439d",
+    "name": "quine-erp — Organization API",
+    "description": "Test data and assertions for every organization endpoint (register, T5a–T5e).\n\n**Run the whole collection in order** (Collection Runner or newman). Each request stores the ids that later requests need.\n\n**Tenant:** the real application has no tenant source yet: identity (T7) is not built and `bootstrap` is not runnable. So the tenant-scoped endpoints need the smoke runner, which reads the tenant from the `X-Smoke-Tenant` header. The production code never reads a tenant from a header. Without the runner, every tenant endpoint answers 401 `TENANT_NOT_RESOLVED`.\n\n**Activation:** `/smoke/organizations/{id}/activate` belongs to the runner only. Setup still uses it to keep organization A independent of the real endpoint. The real activate endpoint (T5e) is tested in folder 6.\n\nClients must branch on `code` only. `message` is developer-facing English (T5f).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0. Setup",
+      "description": "Registers two organizations (tenant A and tenant B) and activates A.\n\nActivation uses the smoke runner's `/smoke/...` endpoint, because the real activate endpoint (T5e) is not built yet.",
+      "item": [
+        {
+          "name": "Register organization A (tenant A)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"runSuffix\", Date.now().toString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"orgA\", pm.response.json().organizationId);",
+                  "pm.collectionVariables.set(\"tenantA\", pm.response.json().tenantId);",
+                  "pm.collectionVariables.set(\"hqA\", pm.response.json().headquartersId);",
+                  "pm.test(\"status is PENDING_ACTIVATION\", () => pm.expect(pm.response.json().status).to.eql(\"PENDING_ACTIVATION\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"organizationName\": \"Quincaillerie Thiès\",\n  \"legalName\": \"Quincaillerie Thiès SARL {{runSuffix}}\",\n  \"currencyCode\": \"XOF\",\n  \"headquartersCode\": \"THIES-01\",\n  \"headquartersName\": \"Siège Thiès\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Register organization B (tenant B)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"orgB\", pm.response.json().organizationId);",
+                  "pm.collectionVariables.set(\"tenantB\", pm.response.json().tenantId);",
+                  "pm.test(\"status is PENDING_ACTIVATION\", () => pm.expect(pm.response.json().status).to.eql(\"PENDING_ACTIVATION\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"organizationName\": \"Quincaillerie Dakar\",\n  \"legalName\": \"Quincaillerie Dakar SARL {{runSuffix}}\",\n  \"currencyCode\": \"XOF\",\n  \"headquartersCode\": \"DAKAR-01\",\n  \"headquartersName\": \"Siège Dakar\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Activate A (smoke runner only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"status is ACTIVE\", () => pm.expect(pm.response.json().status).to.eql(\"ACTIVE\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/smoke/organizations/{{orgA}}/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "smoke",
+                "organizations",
+                "{{orgA}}",
+                "activate"
+              ]
+            },
+            "description": "Runner-only endpoint. The real activate endpoint (T5e) is blocked on the product-owner decision about who activates."
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Register organization — POST /api/organizations",
+      "description": "Public endpoint. It never reads a tenant: registration creates the tenant.",
+      "item": [
+        {
+          "name": "Duplicate legal name → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"code is ORGANIZATION_ALREADY_EXISTS\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_ALREADY_EXISTS\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"organizationName\": \"Quincaillerie Thiès\",\n  \"legalName\": \"Quincaillerie Thiès SARL {{runSuffix}}\",\n  \"currencyCode\": \"XOF\",\n  \"headquartersCode\": \"THIES-01\",\n  \"headquartersName\": \"Siège Thiès\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Unsupported currency GBP → 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"code is UNSUPPORTED_CURRENCY\", () => pm.expect(pm.response.json().code).to.eql(\"UNSUPPORTED_CURRENCY\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"organizationName\": \"Quincaillerie Kaolack\",\n  \"legalName\": \"Quincaillerie Kaolack SARL {{runSuffix}}\",\n  \"currencyCode\": \"GBP\",\n  \"headquartersCode\": \"KAO-01\",\n  \"headquartersName\": \"Siège Kaolack\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Malformed JSON → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code is VALIDATION_FAILED\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_FAILED\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));",
+                  "pm.test(\"message is Request body is missing or malformed\", () => pm.expect(pm.response.json().message).to.eql(\"Request body is missing or malformed\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"organizationName\":",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "All fields invalid → 400 (pinned English message)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code is VALIDATION_FAILED\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_FAILED\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));",
+                  "pm.test(\"message is currencyCode: size must be between 3 and 3; headquartersCode: must match the required format; headquartersCode: must not be blank; headquartersName: must not be blank; headquartersName: size must be between 2 and 120; legalName: must not be blank; legalName: size must be between 2 and 160; organizationName: must not be blank; organizationName: size must be between 2 and 120\", () => pm.expect(pm.response.json().message).to.eql(\"currencyCode: size must be between 3 and 3; headquartersCode: must match the required format; headquartersCode: must not be blank; headquartersName: must not be blank; headquartersName: size must be between 2 and 120; legalName: must not be blank; legalName: size must be between 2 and 160; organizationName: must not be blank; organizationName: size must be between 2 and 120\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "fr"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"organizationName\": \"\",\n  \"legalName\": \"\",\n  \"currencyCode\": \"XO\",\n  \"headquartersCode\": \"\",\n  \"headquartersName\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Sends Accept-Language: fr on purpose. The message must still be English (T5f)."
+          }
+        },
+        {
+          "name": "Caller-supplied tenantId is ignored → 201 with a generated tenant",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"tenantId is generated, not the one sent\", () => pm.expect(pm.response.json().tenantId).to.not.eql(\"00000000-0000-0000-0000-000000000001\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "00000000-0000-0000-0000-000000000001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"organizationName\": \"Quincaillerie Mbour\",\n  \"legalName\": \"Quincaillerie Mbour SARL {{runSuffix}}\",\n  \"currencyCode\": \"XOF\",\n  \"headquartersCode\": \"MBOUR-01\",\n  \"headquartersName\": \"Siège Mbour\",\n  \"tenantId\": \"00000000-0000-0000-0000-000000000001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Add store (T5a) — POST /api/organizations/{id}/stores",
+      "description": "201 on success. There is no Location header and no tenantId.",
+      "item": [
+        {
+          "name": "Add store THIES-02 → 201",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"store2\", pm.response.json().storeId);",
+                  "pm.test(\"storeCode is THIES-02\", () => pm.expect(pm.response.json().storeCode).to.eql(\"THIES-02\"));",
+                  "pm.test(\"headquarters is False\", () => pm.expect(pm.response.json().headquarters).to.eql(false));",
+                  "pm.test(\"active is True\", () => pm.expect(pm.response.json().active).to.eql(true));",
+                  "pm.test(\"response has no tenantId\", () => pm.expect(pm.response.json()).to.not.have.property(\"tenantId\"));",
+                  "pm.test(\"no Location header\", () => pm.expect(pm.response.headers.has(\"Location\")).to.be.false);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/stores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "stores"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeCode\": \"thies-02\",\n  \"storeName\": \"Magasin 2\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Add store THIES-03 → 201",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"store3\", pm.response.json().storeId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/stores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "stores"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeCode\": \"thies-03\",\n  \"storeName\": \"Magasin 3\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Duplicate code, any case → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"code is STORE_CODE_ALREADY_EXISTS\", () => pm.expect(pm.response.json().code).to.eql(\"STORE_CODE_ALREADY_EXISTS\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/stores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "stores"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeCode\": \"THIES-02\",\n  \"storeName\": \"Doublon\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Store to a PENDING organization (B) → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"code is ORGANIZATION_MUST_BE_ACTIVE_TO_ADD_STORE\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_MUST_BE_ACTIVE_TO_ADD_STORE\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantB}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgB}}/stores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgB}}",
+                "stores"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeCode\": \"dakar-02\",\n  \"storeName\": \"Magasin 2\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Name too short once trimmed → 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"code is INVALID_STORE_NAME\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_STORE_NAME\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/stores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "stores"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeCode\": \"thies-09\",\n  \"storeName\": \" a\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Invalid code, Accept-Language de → 400 English",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code is VALIDATION_FAILED\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_FAILED\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));",
+                  "pm.test(\"message is storeCode: must match the required format\", () => pm.expect(pm.response.json().message).to.eql(\"storeCode: must match the required format\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "de"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/stores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "stores"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeCode\": \"THIES 09\",\n  \"storeName\": \"Magasin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Blank storeName → 400 (two parts, sorted)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code is VALIDATION_FAILED\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_FAILED\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));",
+                  "pm.test(\"message is storeName: must not be blank; storeName: size must be between 2 and 120\", () => pm.expect(pm.response.json().message).to.eql(\"storeName: must not be blank; storeName: size must be between 2 and 120\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/stores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "stores"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeCode\": \"thies-09\",\n  \"storeName\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Malformed path id → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code is VALIDATION_FAILED\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_FAILED\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));",
+                  "pm.test(\"message is id: must be a valid UUID\", () => pm.expect(pm.response.json().message).to.eql(\"id: must be a valid UUID\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/not-a-uuid/stores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "not-a-uuid",
+                "stores"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeCode\": \"thies-09\",\n  \"storeName\": \"Magasin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "No tenant → 401 with WWW-Authenticate",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"code is TENANT_NOT_RESOLVED\", () => pm.expect(pm.response.json().code).to.eql(\"TENANT_NOT_RESOLVED\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));",
+                  "pm.test(\"WWW-Authenticate header\", () => pm.expect(pm.response.headers.get(\"WWW-Authenticate\")).to.eql('Bearer realm=\"quine-erp\"'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/stores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "stores"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeCode\": \"thies-09\",\n  \"storeName\": \"Magasin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Other tenant (B → A) → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"code is ORGANIZATION_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_NOT_FOUND\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantB}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/stores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "stores"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeCode\": \"thies-09\",\n  \"storeName\": \"Magasin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Unknown organization → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"code is ORGANIZATION_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_NOT_FOUND\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{$randomUUID}}/stores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{$randomUUID}}",
+                "stores"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeCode\": \"thies-09\",\n  \"storeName\": \"Magasin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Change headquarters (T5b) — PUT /api/organizations/{id}/headquarters",
+      "description": "200 on success. A repeat returns 409 STORE_IS_ALREADY_HEADQUARTERS.",
+      "item": [
+        {
+          "name": "Make store 2 the headquarters → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"headquartersId is store 2\", () => pm.expect(pm.response.json().headquartersId).to.eql(pm.collectionVariables.get(\"store2\")));",
+                  "pm.test(\"response has no tenantId\", () => pm.expect(pm.response.json()).to.not.have.property(\"tenantId\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/headquarters",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "headquarters"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeId\": \"{{store2}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Repeat → 409 already headquarters",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"code is STORE_IS_ALREADY_HEADQUARTERS\", () => pm.expect(pm.response.json().code).to.eql(\"STORE_IS_ALREADY_HEADQUARTERS\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/headquarters",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "headquarters"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeId\": \"{{store2}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Back to the original headquarters → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/headquarters",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "headquarters"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeId\": \"{{hqA}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Unknown store → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"code is STORE_DOES_NOT_BELONG_TO_ORGANIZATION\", () => pm.expect(pm.response.json().code).to.eql(\"STORE_DOES_NOT_BELONG_TO_ORGANIZATION\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/headquarters",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "headquarters"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeId\": \"{{$randomUUID}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Missing storeId → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code is VALIDATION_FAILED\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_FAILED\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));",
+                  "pm.test(\"message is storeId: must not be null\", () => pm.expect(pm.response.json().message).to.eql(\"storeId: must not be null\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/headquarters",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "headquarters"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Non-UUID storeId → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code is VALIDATION_FAILED\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_FAILED\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));",
+                  "pm.test(\"message is Request body is missing or malformed\", () => pm.expect(pm.response.json().message).to.eql(\"Request body is missing or malformed\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/headquarters",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "headquarters"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeId\": \"abc\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Other tenant with a real store id → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"code is ORGANIZATION_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_NOT_FOUND\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantB}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/headquarters",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "headquarters"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeId\": \"{{store2}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Deactivate store (T5c) — POST /api/organizations/{id}/stores/{storeId}/deactivation",
+      "description": "There is no request body. 200 on success.",
+      "item": [
+        {
+          "name": "Deactivate store 3 → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"active is False\", () => pm.expect(pm.response.json().active).to.eql(false));",
+                  "pm.test(\"response has no tenantId\", () => pm.expect(pm.response.json()).to.not.have.property(\"tenantId\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/stores/{{store3}}/deactivation",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "stores",
+                "{{store3}}",
+                "deactivation"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Repeat → 409 already inactive",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"code is STORE_ALREADY_INACTIVE\", () => pm.expect(pm.response.json().code).to.eql(\"STORE_ALREADY_INACTIVE\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/stores/{{store3}}/deactivation",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "stores",
+                "{{store3}}",
+                "deactivation"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Deactivate the headquarters → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"code is HEADQUARTERS_CANNOT_BE_DEACTIVATED\", () => pm.expect(pm.response.json().code).to.eql(\"HEADQUARTERS_CANNOT_BE_DEACTIVATED\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/stores/{{hqA}}/deactivation",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "stores",
+                "{{hqA}}",
+                "deactivation"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Make an inactive store headquarters → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"code is INACTIVE_STORE_CANNOT_BECOME_HEADQUARTERS\", () => pm.expect(pm.response.json().code).to.eql(\"INACTIVE_STORE_CANNOT_BECOME_HEADQUARTERS\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/headquarters",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "headquarters"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeId\": \"{{store3}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Malformed storeId → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code is VALIDATION_FAILED\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_FAILED\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));",
+                  "pm.test(\"message is storeId: must be a valid UUID\", () => pm.expect(pm.response.json().message).to.eql(\"storeId: must be a valid UUID\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/stores/nope/deactivation",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "stores",
+                "nope",
+                "deactivation"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Other tenant with a real store id → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"code is ORGANIZATION_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_NOT_FOUND\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantB}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/stores/{{store2}}/deactivation",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "stores",
+                "{{store2}}",
+                "deactivation"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Close organization (T5d) — POST /api/organizations/{id}/closure",
+      "description": "There is no request body. The tenant closes, with no confirmation step (PO 2026-09-28). Closing is irreversible.",
+      "item": [
+        {
+          "name": "Other tenant → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"code is ORGANIZATION_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_NOT_FOUND\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantB}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/closure",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "closure"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Close B while PENDING → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"code is ORGANIZATION_CANNOT_BE_CLOSED\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_CANNOT_BE_CLOSED\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantB}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgB}}/closure",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgB}}",
+                "closure"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Close A → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"status is CLOSED\", () => pm.expect(pm.response.json().status).to.eql(\"CLOSED\"));",
+                  "pm.test(\"response has no tenantId\", () => pm.expect(pm.response.json()).to.not.have.property(\"tenantId\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/closure",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "closure"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Close A again → 409 already closed",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"code is ORGANIZATION_ALREADY_CLOSED\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_ALREADY_CLOSED\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/closure",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "closure"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Add store after close → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"code is ORGANIZATION_MUST_BE_ACTIVE_TO_ADD_STORE\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_MUST_BE_ACTIVE_TO_ADD_STORE\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/stores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "stores"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeCode\": \"thies-10\",\n  \"storeName\": \"Magasin 10\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Change headquarters after close → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"code is ORGANIZATION_MUST_BE_ACTIVE_TO_CHANGE_HEADQUARTERS\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_MUST_BE_ACTIVE_TO_CHANGE_HEADQUARTERS\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/headquarters",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "headquarters"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeId\": \"{{store2}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Deactivate after close → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"code is ORGANIZATION_MUST_BE_ACTIVE_TO_DEACTIVATE_STORE\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_MUST_BE_ACTIVE_TO_DEACTIVATE_STORE\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/stores/{{store2}}/deactivation",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "stores",
+                "{{store2}}",
+                "deactivation"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Activate organization (T5e) — POST /api/organizations/{id}/activation",
+      "description": "There is no request body. The tenant activates its own organization (PO 2026-10-01). Only PENDING_ACTIVATION can be activated. Runs last: organization B is still PENDING here, and A is CLOSED.",
+      "item": [
+        {
+          "name": "Other tenant (A → B's organization) → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"code is ORGANIZATION_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_NOT_FOUND\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgB}}/activation",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgB}}",
+                "activation"
+              ]
+            }
+          }
+        },
+        {
+          "name": "No tenant → 401 with WWW-Authenticate",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"code is TENANT_NOT_RESOLVED\", () => pm.expect(pm.response.json().code).to.eql(\"TENANT_NOT_RESOLVED\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));",
+                  "pm.test(\"WWW-Authenticate header\", () => pm.expect(pm.response.headers.get(\"WWW-Authenticate\")).to.eql('Bearer realm=\"quine-erp\"'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgB}}/activation",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgB}}",
+                "activation"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Malformed path id → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code is VALIDATION_FAILED\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_FAILED\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));",
+                  "pm.test(\"message names the parameter\", () => pm.expect(pm.response.json().message).to.eql(\"id: must be a valid UUID\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/not-a-uuid/activation",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "not-a-uuid",
+                "activation"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Activate A (closed) → 409 cannot be activated",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"code is ORGANIZATION_CANNOT_BE_ACTIVATED\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_CANNOT_BE_ACTIVATED\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/activation",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgA}}",
+                "activation"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Activate B → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"organizationId is B\", () => pm.expect(pm.response.json().organizationId).to.eql(pm.collectionVariables.get(\"orgB\")));",
+                  "pm.test(\"status is ACTIVE\", () => pm.expect(pm.response.json().status).to.eql(\"ACTIVE\"));",
+                  "pm.test(\"body is {activatedAt, organizationId, status}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"activatedAt\",\"organizationId\",\"status\"]));",
+                  "pm.test(\"response has no tenantId\", () => pm.expect(pm.response.json()).to.not.have.property(\"tenantId\"));",
+                  "pm.test(\"no Location header\", () => pm.expect(pm.response.headers.has(\"Location\")).to.be.false);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantB}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgB}}/activation",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgB}}",
+                "activation"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Activate B again → 409 already active",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"code is ORGANIZATION_ALREADY_ACTIVE\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_ALREADY_ACTIVE\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantB}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgB}}/activation",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgB}}",
+                "activation"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Add store to B after activation → 201",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"storeCode is THIES-02\", () => pm.expect(pm.response.json().storeCode).to.eql(\"THIES-02\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Smoke-Tenant",
+                "value": "{{tenantB}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgB}}/stores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgB}}",
+                "stores"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeCode\": \"THIES-02\",\n  \"storeName\": \"Magasin 2\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:18080"
+    },
+    {
+      "key": "runSuffix",
+      "value": ""
+    },
+    {
+      "key": "orgA",
+      "value": ""
+    },
+    {
+      "key": "tenantA",
+      "value": ""
+    },
+    {
+      "key": "hqA",
+      "value": ""
+    },
+    {
+      "key": "orgB",
+      "value": ""
+    },
+    {
+      "key": "tenantB",
+      "value": ""
+    },
+    {
+      "key": "store2",
+      "value": ""
+    },
+    {
+      "key": "store3",
+      "value": ""
+    }
+  ]
+}

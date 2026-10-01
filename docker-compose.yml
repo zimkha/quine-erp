@@ -1,0 +1,36 @@
+# Local smoke environment: Postgres + the app with the "smoke" profile, which
+# reads the tenant from the X-Smoke-Tenant header. Never use it in production.
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: quine
+      POSTGRES_PASSWORD: quine
+      POSTGRES_DB: quine
+    ports:
+      - "15432:5432"
+    volumes:
+      - quine-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quine -d quine"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build:
+      context: .
+      dockerfile: bootstrap/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: smoke
+      QUINE_DB_URL: jdbc:postgresql://postgres:5432/quine
+      QUINE_DB_USER: quine
+      QUINE_DB_PASSWORD: quine
+    ports:
+      - "18080:18080"
+
+volumes:
+  quine-pgdata:

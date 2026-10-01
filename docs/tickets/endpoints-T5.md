@@ -3,7 +3,7 @@
 - **Status:** written by the BA against `main` at `c035c0d`, after T1–T4 were merged, and validated by the Architect. The Architect's changes are already applied to the ticket text below.
   - T5a, T5b and T5c are validated with changes.
   - T5d is validated with changes. **Its merge blockers are resolved** (product owner, 2026-09-28: the tenant closes, and no confirmation is needed).
-  - T5e is **blocked** on product-owner decision 2. Its domain prerequisite, T5e-0 (`docs/tickets/domain-activate-reinstate-split.md`), is validated.
+  - T5e is **unblocked** (product owner, 2026-10-01: the tenant activates). Its domain prerequisite, T5e-0 (`docs/tickets/domain-activate-reinstate-split.md`), is merged.
 - **Source:** the "Later tickets" section of `docs/tickets/tenant-scoping-T1-T4.md`.
 - **Workflow:** BA → Architect → Developer → Lead Developer (see `CLAUDE.md`).
 
@@ -12,8 +12,8 @@
 1. **T5a–T5d can't succeed end to end through the API until something can activate an organization.**
    - Registration creates organizations in `PENDING_ACTIVATION`.
    - Add store, change headquarters and deactivate store all require `ACTIVE`. Close requires `ACTIVE` or `SUSPENDED`.
-   - While T5e is blocked, every T5a–d call on an organization created over HTTP returns 409.
-   - The tickets can still be built and tested, with tests seeding an `ACTIVE` organization through the handlers. But they deliver no usable value until decision 2 is answered.
+   - Until T5e is merged, every T5a–d call on an organization created over HTTP returns 409.
+   - The tickets could be built and tested meanwhile, with tests seeding an `ACTIVE` organization through the handlers. T5e (decision 2 resolved 2026-10-01: the tenant activates) makes them usable end to end.
 2. **Until identity exists, the endpoints always return 401.**
    - `organization` main code has no `CurrentTenantProvider` bean. Once the controller injects one, any context that loads it must supply a provider.
    - The only planned default is the fail-closed one in `bootstrap`, which always throws.
@@ -48,7 +48,7 @@
 | 10 | T5c: 200 or 204 | **200 with a body** (decision 1). |
 | 11a | Echo `tenantId` on close and activate | **No.** Only register keeps `tenantId`, because that's where the tenant is created. |
 | 11b | T5d: build now, merge after decision 2 | **Agreed.** The confirmation question (retyping the legal name) must also be answered before merge, because it would change the request. **Resolved 2026-09-28:** the tenant closes, and no confirmation is needed. |
-| 12 | T5e | **Blocked on decision 2.** Domain prerequisite: T5e-0 (`activate()` only from `PENDING_ACTIVATION`, a new `reinstate()` for `SUSPENDED`, `ORGANIZATION_ALREADY_ACTIVE` for repeats). The Reinstate and Suspend commands and handlers come with their actor in the suspension-lifecycle ticket or T9. |
+| 12 | T5e | **Unblocked (PO, 2026-10-01: the tenant activates).** Domain prerequisite: T5e-0 (`activate()` only from `PENDING_ACTIVATION`, a new `reinstate()` for `SUSPENDED`, `ORGANIZATION_ALREADY_ACTIVE` for repeats). The Reinstate and Suspend commands and handlers come with their actor in the suspension-lifecycle ticket or T9. |
 
 **Other Architect notes:**
 - `OrganizationCannotBeClosedTwiceRule` was dead code. It is removed in T5e-0.
@@ -93,7 +93,7 @@
 
 **Product-owner decisions 1, 3 and 4** don't affect T5a–d. Decision 2 is covered in T5d and T5e.
 
-**Product-owner decisions recorded 2026-09-28:** the **tenant closes** its organization (decision 2, closing half), and closing needs **no confirmation step**. Who activates, suspends and reinstates is still open.
+**Product-owner decisions recorded 2026-09-28:** the **tenant closes** its organization (decision 2, closing half), and closing needs **no confirmation step**. **Recorded 2026-10-01:** the **tenant activates** its own organization (decision 2, activation half). Who suspends and reinstates is still open.
 
 ---
 
@@ -354,11 +354,11 @@
 
 ---
 
-## T5e: Activate my organization (BLOCKED on product-owner decision 2)
+## T5e: Activate my organization
 
-**User story (valid only if decision 2 = "the tenant activates").** As a tenant, I want to activate my newly registered organization, so that I can start adding stores and trading.
+**User story.** As a tenant, I want to activate my newly registered organization, so that I can start adding stores and trading.
 
-**Status:** **blocked.** Don't design or implement this until decision 2 is answered.
+**Status:** **unblocked.** Product owner, 2026-10-01: decision 2 is "the tenant activates". The Reinstate command and handler still come with their actor in the suspension-lifecycle ticket or T9.
 
 **Scope:**
 - `POST /api/organizations/{id}/activation` → `ActivateOrganizationCommand(tenant, id)`.
@@ -390,25 +390,22 @@
 - Only a `PENDING_ACTIVATION` organization can be activated. Lifting a suspension is `reinstate()`, which T5e never exposes.
 - A closed organization can never be reactivated.
 
-**What changes depending on decision 2:**
-- **Tenant activates** (with the platform suspending and reinstating, or with no suspension concept at all):
-  - Depends on T5e-0 (domain split, merged).
-  - The Reinstate command and handler come with their actor in the suspension-lifecycle ticket or T9.
-  - The product owner accepts that `PENDING_ACTIVATION` is then not a real gate, unless it has prerequisites (KYC, payment).
-- **Platform activates and reinstates:** cancel T5e.
-  - T9 exposes `activate()` (from `PENDING_ACTIVATION`) and `reinstate()` (from `SUSPENDED`) behind a platform path, which needs a platform actor and an unscoped load port.
-  - T5a–d stay unusable end to end until T9 exists.
-- **Tenant for first activation, platform for reinstatement:** covered by T5e-0 as it stands.
+**Decision 2 (resolved 2026-10-01): the tenant activates.**
+- Depends on T5e-0 (domain split, merged).
+- The Reinstate command and handler come with their actor in the suspension-lifecycle ticket or T9.
+- The product owner accepts that `PENDING_ACTIVATION` is then not a real gate, unless it has prerequisites (KYC, payment).
+- ~~Platform activates and reinstates: cancel T5e.~~ Not chosen.
 
 **Dependencies:**
-- **Product-owner decision 2**
+- ~~Product-owner decision 2~~ (resolved 2026-10-01: the tenant activates)
 - T5a
 - T5e-0 (merged)
 
 **Definition of done:** same layers as T5d, plus an end-to-end `*IT` that goes through register, then activate, then add store, all over HTTP.
 
 **Open questions**
-- **Product owner, decision 2:** who activates, and who lifts a suspension?
+- ~~**Product owner, decision 2:** who activates?~~ **Resolved 2026-10-01:** the tenant.
+- **Product owner, still open:** who suspends and who lifts a suspension? This is the suspension-lifecycle ticket or T9, not T5e.
 - ~~Architect: repeat behaviour~~ **Resolved** (decision 3: keep the 409).
 
 ---
@@ -425,4 +422,4 @@ All resolved: see **Architect decisions** 1–12 at the top of this file.
 | T5b change headquarters | yes, after T5a | yes | same |
 | T5c deactivate store | yes, after T5a | yes | same |
 | T5d close | yes, after T5a | yes (both blockers resolved 2026-09-28) | same |
-| T5e activate | **blocked on decision 2**; T5e-0 must be merged first | no | not applicable |
+| T5e activate | yes (T5e-0 merged, decision 2 resolved 2026-10-01) | yes | after bootstrap and T7 |

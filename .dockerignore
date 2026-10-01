@@ -1,0 +1,6 @@
+.git
+.claude
+.idea
+**/target
+**/*.iml
+docs
