@@ -23,7 +23,8 @@ public final class PlainPassword {
   public PlainPassword(String value) {
     Objects.requireNonNull(value, "Password cannot be null");
 
-    if (value.length() < MIN_CHARACTERS
+    if (value.isBlank()
+        || value.length() < MIN_CHARACTERS
         || value.getBytes(StandardCharsets.UTF_8).length > MAX_BYTES) {
       throw new InvalidValueException(
           "INVALID_PASSWORD",

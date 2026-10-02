@@ -23,6 +23,14 @@ class PlainPasswordTest {
   }
 
   @Test
+  void shouldRejectAPasswordMadeOnlyOfSpaces() {
+    assertThatThrownBy(() -> new PlainPassword(" ".repeat(20)))
+        .isInstanceOf(InvalidValueException.class)
+        .extracting("code")
+        .isEqualTo("INVALID_PASSWORD");
+  }
+
+  @Test
   void shouldAcceptExactly72Bytes() {
     assertThat(new PlainPassword("a".repeat(72)).reveal()).hasSize(72);
   }

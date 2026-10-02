@@ -25,7 +25,8 @@ class EmailTest {
   @ParameterizedTest
   @ValueSource(strings = {
       "", "   ", "plain", "no-at.example.com", "a@b", "a@@b.com",
-      "a b@c.com", "@c.com", "a@.com"
+      "a b@c.com", "@c.com", "a@.com", "a@b..com", "a@-b.com.",
+      "\u00e9@b.com", "a@\u00e9.com", "\u0130@b.com", "a\tb@c.com"
   })
   void shouldRejectMalformedAddresses(String value) {
     assertThatThrownBy(() -> new Email(value))

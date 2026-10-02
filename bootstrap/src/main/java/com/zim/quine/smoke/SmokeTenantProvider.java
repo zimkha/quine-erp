@@ -17,7 +17,8 @@ import java.util.UUID;
 /**
  * Local smoke runs only: until identity (T7) exists, the tenant comes from
  * the X-Smoke-Tenant header, which anyone can forge. Never active outside the
- * "smoke" profile, and refuses to start together with a non-local profile.
+ * "smoke" profile, and refuses to start together with any profile that is not
+ * explicitly local (an allow-list, so a new environment name is safe by default).
  */
 @Component
 @Profile("smoke")
@@ -25,12 +26,13 @@ class SmokeTenantProvider implements CurrentTenantProvider {
 
   static final String HEADER = "X-Smoke-Tenant";
 
-  static final Set<String> NON_LOCAL_PROFILES =
-      Set.of("prod", "production", "staging");
+  /** The only profiles the smoke provider may run with: anything else fails. */
+  static final Set<String> LOCAL_PROFILES =
+      Set.of("smoke", "local", "dev", "test", "docker");
 
   SmokeTenantProvider(Environment environment) {
     for (String profile : environment.getActiveProfiles()) {
-      if (NON_LOCAL_PROFILES.contains(profile.toLowerCase(Locale.ROOT))) {
+      if (!LOCAL_PROFILES.contains(profile.toLowerCase(Locale.ROOT))) {
         throw new IllegalStateException(
             "The smoke tenant provider trusts a forgeable header and must "
                 + "never run with the '" + profile + "' profile"

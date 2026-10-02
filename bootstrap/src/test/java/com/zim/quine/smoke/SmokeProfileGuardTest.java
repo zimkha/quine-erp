@@ -11,7 +11,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SmokeProfileGuardTest {
 
   @ParameterizedTest
-  @ValueSource(strings = {"prod", "production", "staging", "PROD"})
+  @ValueSource(strings = {
+      "prod", "production", "staging", "PROD", "uat", "demo", "live", "qa", "preprod"
+  })
   void shouldRefuseToStartWithANonLocalProfile(String nonLocal) {
     new ApplicationContextRunner()
         .withUserConfiguration(SmokeTenantProvider.class)
@@ -22,6 +24,17 @@ class SmokeProfileGuardTest {
           assertThat(context.getStartupFailure())
               .hasStackTraceContaining("must never run with");
         });
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"local", "dev", "test", "docker"})
+  void shouldStartWithAnExplicitlyLocalProfile(String local) {
+    new ApplicationContextRunner()
+        .withUserConfiguration(SmokeTenantProvider.class)
+        .withInitializer(context ->
+            context.getEnvironment().setActiveProfiles("smoke", local))
+        .run(context ->
+            assertThat(context).hasSingleBean(SmokeTenantProvider.class));
   }
 
   @Test

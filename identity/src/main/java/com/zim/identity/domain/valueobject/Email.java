@@ -10,13 +10,19 @@ import java.util.regex.Pattern;
  * An e-mail address, trimmed and lower-cased so that uniqueness is
  * case-insensitive. The check is deliberately structural: whether the
  * address really exists is not the domain's concern.
+ *
+ * <p>Only ASCII is accepted. Java and Postgres disagree on how to trim and
+ * lower-case some non-ASCII characters, so a non-ASCII address could pass
+ * here and then break the database's normalization CHECK. Internationalized
+ * addresses are a possible later extension.
  */
 public final class Email {
 
   private static final int MAX_LENGTH = 254;
 
-  private static final Pattern STRUCTURE =
-      Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
+  private static final Pattern STRUCTURE = Pattern.compile(
+      "^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(\\.[a-z0-9-]+)+$"
+  );
 
   private final String value;
 

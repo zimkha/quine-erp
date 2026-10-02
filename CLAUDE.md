@@ -49,8 +49,8 @@ bounded context: `shared`, `organization`, `identity`, `customer`, `supplier`, `
   business modules (today `organization` and `identity`). Until login (T7b) exists there is no real tenant
   source: without a profile every tenant-scoped endpoint answers 401 (`FailClosedTenantProvider`).
   The `smoke` profile reads the tenant from an `X-Smoke-Tenant` header and adds a
-  `/smoke/organizations/{id}/activate` shortcut, for local runs only (it refuses to start together with a
-  `prod`, `production` or `staging` profile):
+  `/smoke/organizations/{id}/activate` shortcut, for local runs only (it refuses to start together with any
+  profile other than `smoke`, `local`, `dev`, `test` or `docker`):
 
   ```bash
   docker compose up -d --build   # Postgres + app with the smoke profile on :18080
