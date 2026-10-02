@@ -137,9 +137,9 @@ explains why. Full list and rationale: `docs/tickets/cross-module-conventions-T6
   objects (422), business rules (409). Body: `ApiErrorResponse {code, message, timestamp}`.
 - `message` is developer-facing English. Clients branch on `code` only; `Accept-Language` is ignored.
 - A repeat of a state-changing action returns `<ENTITY>_ALREADY_<STATE>` (e.g.
-  `ORGANIZATION_ALREADY_CLOSED`, `STORE_ALREADY_INACTIVE`): target state reached. `..._ALREADY_EXISTS` is
-  a real duplicate conflict. `..._CANNOT_BE_...` means refused from the current status. No endpoint is a
-  silent no-op.
+  `ORGANIZATION_ALREADY_CLOSED`, `STORE_ALREADY_INACTIVE`, `STORE_IS_ALREADY_HEADQUARTERS`): target state
+  reached. `..._ALREADY_EXISTS` is a real duplicate conflict. `..._CANNOT_BE_...` means refused from the
+  current status. No endpoint is a silent no-op.
 - Scope each module's `@RestControllerAdvice` with `basePackageClasses`. `ApiErrorResponse` and the
   generic handlers stay in `organization` until a second module exists, then are extracted once into a
   shared web component (`web-shared`), never copied. The shared generic advice will be unscoped.

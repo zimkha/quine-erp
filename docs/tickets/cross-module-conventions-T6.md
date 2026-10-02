@@ -98,8 +98,8 @@ Each convention is one short rule plus a pointer to the ticket that explains why
 ## Definition of done
 
 - ~~Architect validation recorded here.~~ Done (2026-10-02).
-- `CLAUDE.md` updated and reviewed by the Lead Developer for accuracy against the code.
-- PR into `main`.
+- ~~`CLAUDE.md` updated and reviewed by the Lead Developer for accuracy against the code.~~ Done (2026-10-02): approved with nits, no blockers. The nit on the `_ALREADY_` examples (add `STORE_IS_ALREADY_HEADQUARTERS`) is applied; the nit on bullet length is left as is.
+- ~~PR into `main`.~~ PR #14.
 
 ## Dependencies
 
