@@ -117,6 +117,45 @@ scoping is a cross-cutting concern of the domain model, not bolted on at the per
   `organization/src/test/resources/application-test.yaml`: `flyway.schemas` /
   `default-schema: organization`, `hibernate.default_schema`) — modules do not share a schema.
 
+## Conventions
+
+Followed by `organization`; every new module follows them. Each rule points to the ticket that
+explains why. Full list and rationale: `docs/tickets/cross-module-conventions-T6.md`.
+
+**Tenant** (`docs/tickets/tenant-scoping-T1-T4.md`)
+- A controller calls `CurrentTenantProvider.currentTenant()` once per request and passes it in the
+  command. The tenant never comes from the path, query, body or a header; no request DTO has a
+  `tenantId`; tenant-scoped responses don't echo it (registration generates it and returns it).
+- Another tenant's aggregate looks exactly like a missing one: the same 404, never 409 or 403.
+- Providers fail closed (`TenantNotResolvedException`, 401). The only default is `FailClosedTenantProvider`
+  in `bootstrap`, removed when `identity` (T7) lands. Modules ship no default of their own.
+- Tenant-scoped endpoints get their own controller; the public one (register) never injects the provider.
+
+**Errors** (`docs/tickets/endpoints-T5.md`, shared contract)
+- Step order: request validation (400), tenant (401), then in the handler: ownership (404), value
+  objects (422), business rules (409). Body: `ApiErrorResponse {code, message, timestamp}`.
+- `message` is developer-facing English. Clients branch on `code` only; `Accept-Language` is ignored.
+- A repeat returns its 409 `..._ALREADY_...` ("target state reached"); `..._CANNOT_BE_...` means refused
+  from the current status. No endpoint is a silent no-op.
+- Scope each module's `@RestControllerAdvice` with `basePackageClasses`. `ApiErrorResponse` and the
+  generic handlers stay in `organization` until a second module exists, then are extracted once into a
+  shared web component (`web-shared`), never copied.
+
+**Validation messages** (`docs/tickets/validation-message-locale.md`)
+- Build each message from the constraint type with the pinned texts, never `getDefaultMessage()` or
+  default-locale formatting. No `ValidationMessages.properties`.
+- DTOs may use only constraints with a pinned text, no class-level ones, enforced by a guard test per
+  module (model: `RequestDtoConstraintGuardTest`).
+
+**Wiring and migrations**
+- `bootstrap` wires modules by hand in `QuineApplication` (`@Import`, `@EntityScan`,
+  `@EnableJpaRepositories`); a module not added there silently doesn't load.
+- A V3-style migration (column, backfill and constraint in one transaction) is acceptable only while no
+  deployed database exists; after that follow `docs/conventions-migrations.md`.
+
+**Deferred until a second module exists:** ArchUnit rules, the shared validation-message helper and the
+shared web component for the error contract.
+
 ## Stack
 
 - Java 21, Spring Boot 4.1.0 (via `spring-boot-dependencies` BOM in the parent POM)
