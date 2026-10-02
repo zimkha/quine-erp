@@ -46,10 +46,11 @@ bounded context: `shared`, `organization`, `identity`, `customer`, `supplier`, `
   `BusinessRuleViolationException`), `DomainException`, `TenantId`. Every other module depends on it and
   builds its own aggregates/rules on top of these base types.
 - **`bootstrap`** is the composition root: a Spring Boot app (`QuineApplication`) that wires the
-  business modules (today only `organization`). Until identity (T7) exists there is no real tenant
+  business modules (today `organization` and `identity`). Until login (T7b) exists there is no real tenant
   source: without a profile every tenant-scoped endpoint answers 401 (`FailClosedTenantProvider`).
   The `smoke` profile reads the tenant from an `X-Smoke-Tenant` header and adds a
-  `/smoke/organizations/{id}/activate` shortcut, for local runs only:
+  `/smoke/organizations/{id}/activate` shortcut, for local runs only (it refuses to start together with a
+  `prod`, `production` or `staging` profile):
 
   ```bash
   docker compose up -d --build   # Postgres + app with the smoke profile on :18080
@@ -61,7 +62,10 @@ bounded context: `shared`, `organization`, `identity`, `customer`, `supplier`, `
 - **`organization`** is the only fully implemented business module and is the reference to
   follow when building out the others (same package layout, same CQRS-ish handler pattern,
   same test layering).
-- The other business modules (`identity`, `customer`, `supplier`, `catalog`, `inventory`,
+- **`identity`** is implemented as far as T7a: the `User` aggregate (e-mail, BCrypt password hash, one owner
+  per tenant), `CreateOwnerHandler` and its own `identity` schema. Login, tokens and the security filter
+  are T7b (deferred); registration creating the owner is T7c. See `docs/tickets/identity-T7.md`.
+- The other business modules (`customer`, `supplier`, `catalog`, `inventory`,
   `purchasing`, `sales`, `cash`, `notification`, `reporting`) are scaffolded (POM only, single
   placeholder `Main.java`) and not yet implemented.
 
@@ -115,7 +119,10 @@ scoping is a cross-cutting concern of the domain model, not bolted on at the per
   `organization/src/main/resources/db/migration/organization/V1__create_organization_schema.sql`).
 - Each module's Flyway config scopes itself to its own Postgres **schema** (see
   `organization/src/test/resources/application-test.yaml`: `flyway.schemas` /
-  `default-schema: organization`, `hibernate.default_schema`) — modules do not share a schema.
+  `default-schema: organization`) — modules do not share a schema, and entities name their schema
+  explicitly (`@Table(schema = "...")`).
+- In `bootstrap` each module has its own `Flyway` bean (`FlywayConfiguration`), so each module keeps its
+  own `flyway_schema_history` and every module can start at `V1`. A new module adds its pair of beans there.
 
 ## Conventions
 
