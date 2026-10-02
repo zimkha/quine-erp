@@ -10,7 +10,7 @@
 ## User story
 
 As a developer building the next module (`customer`, `catalog`, `inventory`…), I want the rules the
-`organization` module already follows written in one place, so that I copy them instead of
+`organization` module already follows written in one place, so that I follow them instead of
 rediscovering them from five tickets and the code.
 
 ## Architect decisions
@@ -18,7 +18,7 @@ rediscovering them from five tickets and the code.
 | # | Question | Decision |
 |---|---|---|
 | 1 | `CLAUDE.md` or an ADR | **A "Conventions" section in `CLAUDE.md`, no ADR.** `docs/adr/` doesn't exist, and the T1–T5f tickets already hold the rationale, so the section only needs pointers to them. |
-| 2 | ArchUnit, the shared helper and the shared error contract | **Stay deferred** until a second module exists. `FieldErrorMessages`, `ApiErrorResponse` and the generic handlers live in `organization` today. At that point they are **extracted once into a shared web component, not copied per module** (raised in review, 2026-10-02: per-module copies drift). |
+| 2 | ArchUnit, the shared helper and the shared error contract | **Stay deferred** until a second module exists. `FieldErrorMessages`, `ApiErrorResponse` and the generic handlers live in `organization` today. At that point they are **extracted once into a shared web component (`web-shared`, package `com.zim.shared.web`), not copied per module** (raised in review, 2026-10-02: per-module copies drift). |
 | 3 | Migration staging rule | **Out of `CLAUDE.md`.** It matters only once production has large tables. `CLAUDE.md` keeps one line (with the V3 caveat) pointing to a new `docs/conventions-migrations.md`. |
 | 4 | Checked against the code | Every rule below was checked. One was wrong and is corrected (a response never echoes the tenant, except registration). "Handler order" is reworded as "step order": Spring picks the most specific exception handler, and `BusinessRuleViolationException` extends `DomainException`. |
 
@@ -47,7 +47,7 @@ Each convention is one short rule plus a pointer to the ticket that explains why
 
 - Step order: request-format validation (400), tenant resolution (401), then inside the handler: ownership (404), value objects (422), business rules (409).
 - Error body is `ApiErrorResponse {code, message, timestamp}`. The status-and-code table is the one in `endpoints-T5.md`.
-- Until a second module exists, `ApiErrorResponse` and the generic handlers (validation, malformed body, 401, `CONCURRENT_MODIFICATION`, `DATA_INTEGRITY_VIOLATION`) stay in `organization`'s `presentation/rest/exception`. When the second module arrives, extract them into a shared web component, with the same trigger as the ArchUnit and helper deferral. **Do not copy them into the new module:** the error shape is a contract with clients and copies drift. Each module keeps only an advice for its own domain exceptions.
+- Until a second module exists, `ApiErrorResponse` and the generic handlers (validation, malformed body, 401, `CONCURRENT_MODIFICATION`, `DATA_INTEGRITY_VIOLATION`) stay in `organization`'s `presentation/rest/exception`. When the second module arrives, extract them once into a shared web component, with the same trigger as the ArchUnit and helper deferral (Architect: a new Maven module `web-shared`, package `com.zim.shared.web`, depending on `shared` and spring-web; business modules depend on it and `bootstrap` imports it). **Do not copy them into the new module:** the error shape is a contract with clients and copies drift. Each module keeps only an advice for its own domain exceptions. The shared generic advice is unscoped; `basePackageClasses` applies only to per-module domain advice.
 - The generic handlers map `OptimisticLockingFailureException` to 409 `CONCURRENT_MODIFICATION`, and `DataIntegrityViolationException` to 409 `DATA_INTEGRITY_VIOLATION` with a generic message and no SQL detail.
 - The 401 carries `WWW-Authenticate: Bearer realm="quine-erp"`.
 - `message` is developer-facing English. Clients branch only on `code`, and the server never localizes errors or reads `Accept-Language` for them. Localized end-user text is the client's job.
@@ -80,7 +80,7 @@ Each convention is one short rule plus a pointer to the ticket that explains why
 
 ## Out of scope
 
-- **ArchUnit rules, a shared validation-message helper and the shared error contract** (the Architect's T5f decision 6): they come once a second module exists, so nothing is built for one module. This ticket documents the convention and keeps these deferred. Extracting them is a separate ticket, triggered by the second module.
+- **ArchUnit rules, a shared validation-message helper and the shared web component for the error contract** (the Architect's T5f decision 6): they come once a second module exists, so nothing is built for one module. This ticket documents the convention and keeps these deferred. Extracting them is a separate ticket, triggered by the second module.
 - Per-field structured validation errors (`field` plus a constraint code): a separate follow-up ticket (product-owner follow-up in `validation-message-locale.md`).
 - Mapping 405 and 415 into `ApiErrorResponse`.
 - Identity, roles and platform admin (T7, T8, T9), row-level security (T10), and the suspension lifecycle.
