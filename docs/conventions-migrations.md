@@ -1,7 +1,7 @@
 # Database migrations on large tables
 
-Applies once a deployed database holds large tables. While none exists (as for `organization` V3,
-confirmed by the product owner on 2026-09-27), one migration in one transaction is fine.
+Applies once a deployed database holds large tables. While none exists (as for `organization` V3; see
+`docs/tickets/tenant-scoping-T1-T4.md`, decision 7), one migration in one transaction is fine.
 
 Add a column, backfill it and constrain it in stages, one migration or deployment per stage:
 
