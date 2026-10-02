@@ -1,5 +1,6 @@
 package com.zim.quine;
 
+import com.zim.identity.infrastructure.configuration.IdentityConfiguration;
 import com.zim.organization.infrastructure.configuration.OrganizationConfiguration;
 import com.zim.organization.presentation.rest.OrganizationController;
 import com.zim.organization.presentation.rest.TenantOrganizationController;
@@ -13,12 +14,17 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
 @EnableAutoConfiguration
 @ComponentScan("com.zim.quine")
-@EntityScan(basePackages = "com.zim.organization.infrastructure.persistence.entity")
-@EnableJpaRepositories(
-    basePackages = "com.zim.organization.infrastructure.persistence.repository"
-)
+@EntityScan(basePackages = {
+    "com.zim.organization.infrastructure.persistence.entity",
+    "com.zim.identity.infrastructure.persistence.entity"
+})
+@EnableJpaRepositories(basePackages = {
+    "com.zim.organization.infrastructure.persistence.repository",
+    "com.zim.identity.infrastructure.persistence.repository"
+})
 @Import({
     OrganizationConfiguration.class,
+    IdentityConfiguration.class,
     OrganizationController.class,
     TenantOrganizationController.class,
     ApiExceptionHandler.class

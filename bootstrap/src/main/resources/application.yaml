@@ -6,14 +6,6 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
-    properties:
-      hibernate:
-        default_schema: organization
-  flyway:
-    enabled: true
-    locations: classpath:db/migration/organization
-    schemas: organization
-    default-schema: organization
 
 server:
   port: ${QUINE_PORT:18080}
