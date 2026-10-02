@@ -1,6 +1,6 @@
 # T6: Write the cross-module conventions down (documentation)
 
-- **Status:** written by the BA against `main` at `f20bc52` (2026-10-02). **Waiting for Architect validation.**
+- **Status:** written by the BA against `main` at `f20bc52` (2026-10-02). **Architect: validated with changes (2026-10-02, checked against `f20bc52`).** The changes are already applied below.
 - **Workflow:** BA → Architect → Developer → Lead Developer (see `CLAUDE.md`).
 - **Sources:**
   - `docs/tickets/tenant-scoping-T1-T4.md` ("Rules to add to T6")
@@ -12,6 +12,15 @@
 As a developer building the next module (`customer`, `catalog`, `inventory`…), I want the rules the
 `organization` module already follows written in one place, so that I copy them instead of
 rediscovering them from five tickets and the code.
+
+## Architect decisions
+
+| # | Question | Decision |
+|---|---|---|
+| 1 | `CLAUDE.md` or an ADR | **A "Conventions" section in `CLAUDE.md`, no ADR.** `docs/adr/` doesn't exist, and the T1–T5f tickets already hold the rationale, so the section only needs pointers to them. |
+| 2 | ArchUnit and the shared helper | **Stay deferred** until a second module exists. `FieldErrorMessages` and `ApiErrorResponse` live in `organization` today. |
+| 3 | Migration staging rule | **Out of `CLAUDE.md`.** It matters only once production has large tables. `CLAUDE.md` keeps one line (with the V3 caveat) pointing to a new `docs/conventions-migrations.md`. |
+| 4 | Checked against the code | Every rule below was checked. One was wrong and is corrected (a response never echoes the tenant, except registration). "Handler order" is reworded as "step order": Spring picks the most specific exception handler, and `BusinessRuleViolationException` extends `DomainException`. |
 
 ## Context
 
@@ -28,16 +37,19 @@ Each convention is one short rule plus a pointer to the ticket that explains why
 ### 1. Tenant
 
 - The controller calls `CurrentTenantProvider.currentTenant()` once per request and passes the result as the command's `tenantId`.
-- The tenant is never read from the path, the query string, the body or a header. No request DTO declares a `tenantId`, and no response echoes it.
+- The tenant is never read from the path, the query string, the body or a header. No request DTO declares a `tenantId`, and no tenant-scoped response echoes it. Registration is the one exception: it generates the tenant (`TenantIdGenerator`), takes no `tenantId` in its command, and returns it in `RegisterOrganizationResponse`.
 - An aggregate the caller's tenant doesn't own is indistinguishable from a missing one: the same 404, never a 409 or a 403.
 - Providers fail closed: if the tenant can't be established they throw `TenantNotResolvedException` (401, never `null`).
-- There is one default fail-closed provider, in `bootstrap` (`FailClosedTenantProvider`), removed when `identity` (T7) supplies the real one. Modules don't ship their own default (`@ConditionalOnMissingBean` defaults are rejected: registration order and duplicate beans).
+- There is one default fail-closed provider, in `bootstrap` (`FailClosedTenantProvider`, `@Profile("!smoke")`), removed when `identity` (T7) supplies the real one. The `smoke` profile swaps in `SmokeTenantProvider` (tenant from `X-Smoke-Tenant`), for local runs only. Modules don't ship their own default (`@ConditionalOnMissingBean` defaults are rejected: registration order and duplicate beans).
 - Tenant-scoped endpoints live in their own controller. The controller that serves public endpoints (register) never injects `CurrentTenantProvider`.
 
 ### 2. Order of steps and error contract
 
-- Order: request-format validation (400), tenant resolution (401), then the handler: ownership (404), value objects (422), business rules (409).
+- Step order: request-format validation (400), tenant resolution (401), then inside the handler: ownership (404), value objects (422), business rules (409).
 - Error body is `ApiErrorResponse {code, message, timestamp}`. The status-and-code table is the one in `endpoints-T5.md`.
+- `ApiErrorResponse` and `ApiExceptionHandler` live in each module's `presentation/rest/exception`. A new module declares its own copy with the same shape, until a shared one exists.
+- Every module's advice also maps `OptimisticLockingFailureException` to 409 `CONCURRENT_MODIFICATION`, and `DataIntegrityViolationException` to 409 `DATA_INTEGRITY_VIOLATION` with a generic message and no SQL detail.
+- The 401 carries `WWW-Authenticate: Bearer realm="quine-erp"`.
 - `message` is developer-facing English. Clients branch only on `code`, and the server never localizes errors or reads `Accept-Language` for them. Localized end-user text is the client's job.
 - Repeated actions: a repeat returns its 409 "already" code (`…_ALREADY_…`), which clients treat as "target state already reached". `…_CANNOT_BE_…` means the action is refused from the current status and is never success. No endpoint is a silent no-op.
 - Each module scopes its `@RestControllerAdvice` with `basePackageClasses`, so modules can't take each other's exceptions.
@@ -52,10 +64,15 @@ Each convention is one short rule plus a pointer to the ticket that explains why
 - Malformed path UUIDs and malformed or missing JSON bodies get the fixed messages `"<param>: must be a valid UUID"` and `"Request body is missing or malformed"`. Raw input is never echoed.
 - When a controller first puts a constraint on a `@PathVariable` or `@RequestParam`, `HandlerMethodValidationException` must be mapped with the same pinned texts. No controller does today.
 
-### 4. Database migrations
+### 4. Wiring a new module into `bootstrap`
+
+- `bootstrap` wires modules by hand in `QuineApplication`: `@Import` for the module's configuration, controllers and advice, plus `@EntityScan` and `@EnableJpaRepositories` for its packages. `@ComponentScan` covers only `com.zim.quine`. A module that isn't added there silently doesn't load.
+
+### 5. Database migrations
 
 - One Flyway path and one Postgres schema per module (already in `CLAUDE.md`).
-- A migration like V3 (new column plus backfill plus constraint in one transaction) is acceptable only while no deployed database exists. Once production has large tables, apply it in stages:
+- `CLAUDE.md` holds one line: a migration like V3 (new column, backfill and constraint in one transaction) is acceptable only while no deployed database exists, and later ones follow `docs/conventions-migrations.md`.
+- New file `docs/conventions-migrations.md` holds the staged approach for large tables:
   1. add the column as nullable
   2. backfill in batches
   3. add the foreign key as `NOT VALID`, then `VALIDATE CONSTRAINT`
@@ -71,15 +88,16 @@ Each convention is one short rule plus a pointer to the ticket that explains why
 
 ## Acceptance criteria
 
-- `CLAUDE.md` has a "Conventions" section with the four groups above, each rule one or two lines with a pointer to its source ticket.
+- `CLAUDE.md` has a "Conventions" section with the groups above (the migration group is one line plus a pointer), each rule one or two lines with a pointer to its source ticket.
+- `docs/conventions-migrations.md` exists and holds the staged-migration steps.
 - Every rule matches what `organization` does today. Where code and ticket disagree, the Architect decides which is right, and the ticket or the code is fixed in its own change.
 - The section doesn't contradict the rest of `CLAUDE.md` (layout, multi-tenancy, database, code style, the `/api` prefix).
 - The ticket's deferred items (ArchUnit, shared helper) are named as deferred in the section, with the trigger "a second module exists".
-- No file outside `CLAUDE.md` and `docs/` changes. `mvn clean test` is unaffected.
+- No file outside `CLAUDE.md` and `docs/` changes (the new file is `docs/conventions-migrations.md`). `mvn clean test` is unaffected.
 
 ## Definition of done
 
-- Architect validation recorded here.
+- ~~Architect validation recorded here.~~ Done (2026-10-02).
 - `CLAUDE.md` updated and reviewed by the Lead Developer for accuracy against the code.
 - PR into `main`.
 
@@ -90,9 +108,6 @@ Each convention is one short rule plus a pointer to the ticket that explains why
 
 ## Open questions
 
-**Architect**
-1. **Where:** a "Conventions" section in `CLAUDE.md` (recommended: it's loaded every session, so it's read), or an ADR under `docs/adr/` for the rationale with a short summary in `CLAUDE.md`?
-2. **Deferral:** confirm ArchUnit and the shared helper stay deferred until a second module exists.
-3. **Length:** `CLAUDE.md` is loaded into every session. Should the migration staging rule (needed only once production has large tables) stay there or live in the ADR?
+**Architect:** ~~1–3~~ all **resolved**, see the decisions table.
 
 **Product owner:** none.
