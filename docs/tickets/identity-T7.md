@@ -1,6 +1,6 @@
 # T7: Identity: authenticated users and the real current tenant
 
-- **Status:** drafted by the BA against `main` at `a708069` (2026-10-02). **Product owner answered questions 1–5 on 2026-10-02** (recorded below). **Waiting for Architect validation.** The Architect questions that remain are listed at the end.
+- **Status:** drafted by the BA against `main` at `a708069` (2026-10-02). Product owner answered questions 1–5 on 2026-10-02. **Architect: validated with changes (2026-10-02, checked against `a708069`).** The changes are applied below. Two small product-owner confirmations remain (e-mail uniqueness, password length), listed at the end.
 - **Workflow:** BA → Architect → Developer → Lead Developer (see `CLAUDE.md`).
 - **Sources:** the "T7" follow-ups in `tenant-scoping-T1-T4.md`, `endpoints-T5.md` and `cross-module-conventions-T6.md`.
 
@@ -12,11 +12,24 @@ As a tenant user, I want to authenticate and have every request act for my own o
 
 | # | Question | Decision |
 |---|---|---|
-| 1 | Authentication scheme | **Our own e-mail and password.** `identity` stores and verifies the credentials. An external provider (Google, Microsoft, company login) is a possible later ticket. How the proof of login is carried per request (token or session) is now an Architect question. |
-| 2 | Who may register | **Anyone: public self-signup, as today.** Registration therefore must also collect the owner's e-mail and password. A platform-admin or invitation-only registration is out of scope. |
+| 1 | Authentication scheme | **Our own e-mail and password.** `identity` stores and verifies the credentials. An external provider (Google, Microsoft, company login) is a possible later ticket. |
+| 2 | Who may register | **Anyone: public self-signup, as today.** Registration therefore also collects the owner's e-mail and password. A platform-admin or invitation-only registration is out of scope. |
 | 3 | First user | **Yes: the person who registers is the owner of the new tenant, and there is exactly one owner to begin with.** Adding more users later is a separate ticket. |
 | 4 | Owner creation fails | **All or nothing:** the whole registration fails and nothing is created (no organization, no tenant, no user). |
-| 5 | One tenant per user | **Yes: one user belongs to exactly one tenant.** A request does not say which tenant it acts for. Allowing several tenants per user later is possible but costs a data-model change. |
+| 5 | One tenant per user | **Yes: one user belongs to exactly one tenant.** A request does not say which tenant it acts for. Allowing several tenants per user later costs a data-model change. |
+
+## Architect decisions
+
+| # | Question | Decision |
+|---|---|---|
+| 6 | How the owner is created atomically | **A driven port `OwnerRegistrar` (`organization`, `application/port`, framework-free).** `RegisterOrganizationHandler` calls it after `save` and before it publishes `OrganizationRegistered`. `bootstrap` provides the adapter, which calls `identity`'s `CreateOwnerHandler`. A failure propagates as a plain exception and rolls everything back. **Not an `@EventListener`:** that hides the atomicity requirement behind an implicit contract (the `SpringDomainEventPublisher` javadoc). The event stays a notification. Update that javadoc to say events are not used for atomicity. |
+| 7 | Module boundaries | `bootstrap` depends on `organization` and `identity`; both depend on `shared` only; **they never reference each other.** Only `bootstrap` knows both, so the `OwnerRegistrar` adapter lives there. `identity` owns the token verification and a `CurrentTenantProvider` implementation (reading the authenticated principal); `CurrentTenantProvider` stays in `shared`, which stays framework-free. The `SecurityFilterChain` bean (route rules) is a `@Configuration` in `bootstrap`, because it sees all routes: `POST /api/organizations` and `POST /api/auth/login` are public, everything else is authenticated. |
+| 8 | Slicing | **T7a, then T7c, then T7b.** The owner must exist before a real login can be tested. See the slicing section. |
+| 9 | 400 before 401 | **For tenant endpoints, 401 comes before 400** once the filter chain runs first (it runs before the `DispatcherServlet`). The public registration and login endpoints keep 400. The 401 header and body are produced today in `ApiExceptionHandler.handleTenantNotResolved`, but an exception thrown in a filter never reaches an `@RestControllerAdvice`: the authentication entry point must write the same `ApiErrorResponse` and header itself. |
+| 10 | Local runs | **Seed through registration plus login.** No dev token endpoint, no seeded user in a migration, no profile-gated bypass. The `smoke` profile stays only for `SmokeController` (the activate shortcut), now using the real tenant. Postman: a "Register then Login" setup folder that stores `{{tokenA}}` and `{{tokenB}}`. |
+| 11 | How login is carried | **A signed stateless JWT access token.** Spring Security `oauth2-resource-server` with a `NimbusJwtDecoder` and an HS256 symmetric key from the env var `QUINE_JWT_SECRET` (**the app fails to start if it is missing**), short TTL, no refresh in T7. The tenant is a `tenantId` claim, validated as a UUID, otherwise `TenantNotResolvedException`. Passwords use `BCryptPasswordEncoder` (or a `DelegatingPasswordEncoder` for upgrades). Login is `POST /api/auth/login` in `identity/presentation`, response `{accessToken, tokenType, expiresIn}`. Credentials live in the `identity` schema. Spring pieces: `spring-boot-starter-security`, `spring-boot-starter-oauth2-resource-server`, a `BearerTokenAuthenticationEntryPoint` customised to write the `ApiErrorResponse` body with `code: TENANT_NOT_RESOLVED`, and an `AccessDeniedHandler` for 403. **Why:** stateless, no session store, fits a multi-instance Postgres setup, and matches the existing `Bearer` header. Revocation and refresh are acknowledged limits (see Risks). |
+| 12 | Validation of the new request fields | **`@Email` with the pinned text `must be a valid e-mail address`.** One new row in `validation-message-locale.md`, a branch in `FieldErrorMessages`, and an update to `RequestDtoConstraintGuardTest`. Password: `@NotBlank` plus `@Size(min=12, max=72)` (72 bytes is bcrypt's limit). E-mail is capped with `@Size`. The password never appears in any message, and the guard test asserts it. |
+| 13 | Breaking registration request | **`POST /api/organizations` gains required `ownerEmail` and `ownerPassword`.** It ships in T7c with the Postman collection updated in the same PR, with no versioning or compatibility shim, because no shared or staging database exists (PO, 2026-09-27). *The Architect assumes there is no external client; the product owner confirms (below).* |
 
 ## Context: what exists today
 
@@ -24,59 +37,86 @@ As a tenant user, I want to authenticate and have every request act for my own o
 - Two stand-in providers live in `bootstrap`, and both are marked "removed in T7":
   - `FailClosedTenantProvider` (no profile): always throws, so every tenant endpoint answers 401.
   - `SmokeTenantProvider` (`smoke` profile): reads the tenant from the `X-Smoke-Tenant` header. Anyone can forge it, so it is for local runs only.
-- Registration (`POST /api/organizations`) is anonymous. It **generates** the tenant (`TenantIdGenerator`) and returns `tenantId` in its response. Its command carries only organization and headquarters data: **no user, e-mail or password**.
-- `OrganizationRegistered(eventId, organizationId, tenantId, headquartersId, occurredAt)` is published as a Spring application event, **synchronously and inside the command's transaction** (`SpringDomainEventPublisher`). Consumers choose `@TransactionalEventListener(AFTER_COMMIT)` or a plain `@EventListener` (an exception then rolls registration back).
+- Registration (`POST /api/organizations`) is anonymous. It **generates** the tenant (`TenantIdGenerator`) and returns `tenantId` in its response. Its duplicate check (`existsByLegalName`) is platform-wide, which is legitimate because registration is public. Its command carries only organization and headquarters data: **no user, e-mail or password**.
+- `OrganizationRegistered(eventId, organizationId, tenantId, headquartersId, occurredAt)` is published as a Spring application event, synchronously and inside the command's transaction (`SpringDomainEventPublisher`).
 - The `identity` module is an empty scaffold (a POM and a placeholder `Main.java`).
+- `bootstrap` depends only on `organization`, and `application.yaml` hardcodes one Flyway location and schema and `default_schema: organization`. `CLAUDE.md` requires one schema per module.
 - Decisions already taken for T7 (from earlier tickets):
   - A malformed tenant claim becomes `TenantNotResolvedException`, never a guess.
-  - 400 before 401 today (Spring's natural order). **Revisit** when a security filter authenticates before validation.
-  - "Authenticated but no tenant" should become **403**. If the scheme isn't Bearer, update `WWW-Authenticate`.
+  - **A valid token with a missing or malformed `tenantId` claim is 401 `TENANT_NOT_RESOLVED`.** 403 is reserved for T8 (authenticated but not allowed). This replaces the earlier "authenticated but no tenant should become 403" follow-up.
 
-## Proposed slicing (for the Architect to confirm)
+## Slicing (Architect-confirmed order)
 
-T7 is too large for one change. Suggested order, each independently mergeable:
+Each slice is independently mergeable.
 
-- **T7a: users and credentials in `identity`.** A `User` aggregate belonging to a tenant, a way to create the first one, and verification of a credential. No HTTP security yet.
-- **T7b: authentication and the real `CurrentTenantProvider`.** A security filter that authenticates the request and a provider that returns the user's tenant, failing closed. Removes `FailClosedTenantProvider` and `SmokeTenantProvider`. Revisits 400-before-401 and the 403 case.
-- **T7c: owner linking.** Consuming `OrganizationRegistered` to attach the first user to the new tenant, and changing registration so an owner exists.
+### T7a: `identity` domain and persistence
+- **Scope:**
+  - `User` aggregate with `UserId`, `TenantId`, `Email` and `PasswordHash` value objects.
+  - `EmailMustBeUniqueRule`, `CreateOwnerHandler`, and a `PasswordHasher` port with a BCrypt adapter.
+  - The `identity` schema and Flyway migration, with its own `@Table(schema = "identity")` entities, repositories, and `@EntityScan` / `@EnableJpaRepositories` entries.
+  - Splitting the Flyway and Hibernate configuration in `bootstrap` per module (locations and schemas as lists), and the `bootstrap` dependency on `identity`. `identity/pom.xml` gets its dependencies (`shared`, JPA, Flyway, Spring Security crypto).
+  - E-mail normalisation: trim and lower-case before the uniqueness check, with a case-insensitive unique index.
+- **Definition of done:** unit tests for the aggregate, the rule and the handler (no Spring); an `*IT` with Testcontainers for the repository and the unique-e-mail constraint. Not wired into the registration flow yet.
 
-## Scope (all slices)
+### T7c: registration creates the owner
+- **Scope:** the request and command change, the `OwnerRegistrar` port, the `bootstrap` adapter, and the wiring. New DTO validation (`@Email`, password size) with the pinned text and guard-test update.
+- **Definition of done:**
+  - unit test of the handler: when the port fails, no organization is saved;
+  - `@WebMvcTest` for the new DTO validation messages and the guard test;
+  - an `*IT` in `bootstrap` proving a duplicate e-mail rolls back the organization;
+  - the Postman setup updated, including the existing "no `tenantId` in response" and "`tenantId` is generated" checks.
 
-- A user identity concept in `identity`, tenant-owned (`TenantId` from the shared kernel), following the `organization` layout (domain, application, infrastructure, presentation).
-- Authenticating a request and resolving its tenant through `CurrentTenantProvider`, with the fail-closed behaviour unchanged for unauthenticated requests (401 `TENANT_NOT_RESOLVED`).
-- Registration collects the owner's e-mail and password and creates the owner in the same all-or-nothing operation (decisions 2, 3, 4). This **changes the `POST /api/organizations` request**: it gains owner credentials fields.
-- Removing the two stand-in providers from `bootstrap`, and updating the Postman collection and the `smoke` setup accordingly.
+### T7b: authentication
+- **Scope:** `POST /api/auth/login`, JWT issue and verification, the filter chain, the real `CurrentTenantProvider`. Removes both stand-ins, `FailClosedTenantProviderTest`, `SmokeTenantProviderTest`, the `X-Smoke-Tenant` headers in Postman and the `smoke` reference in `docker-compose.yml`.
+- **Definition of done:** unit tests for token issue and verify; `@WebMvcTest` for 401 with the `WWW-Authenticate` header, for the 401-before-400 order, and for 403; an `*IT` that logs in and then calls a tenant endpoint; a cross-tenant test returning the same 404; the Postman collection run end to end.
 
 ## Out of scope
 
 - Roles and permissions inside a tenant, and 403 for "authenticated but not allowed" (T8).
 - A platform-admin identity and the platform path for activate, close, suspend and reinstate (T9).
 - Postgres row-level security (T10).
-- Password reset, e-mail verification, social or company login, MFA, inviting more users (separate tickets).
+- Password reset, e-mail verification, social or company login, MFA, token refresh and revocation, rate limiting, inviting more users (separate tickets).
 - Registration by invitation or by a platform admin (decision 2).
 - A user belonging to several tenants (decision 5).
 - Changing `code` values or the `ApiErrorResponse` shape.
 
-## Acceptance criteria (draft; some depend on the open decisions)
+## Acceptance criteria
 
-- **Authenticated request:** Given a valid credential of user U in tenant A, when U calls a tenant endpoint, then the command's tenant is A and the response is as before.
-- **Unauthenticated or invalid:** Given no credential, an invalid or expired one, or a malformed tenant claim, then the response is 401 `TENANT_NOT_RESOLVED` with the `WWW-Authenticate` header, and no handler runs.
-- **No tenant for a valid user:** Given an authenticated user with no resolvable tenant, then the response follows the decided status (403 per the earlier follow-up, to be confirmed).
-- **Cross-tenant:** Given user U of tenant A and an organization of tenant B, then the response is the same 404 as a missing organization.
-- **Caller input ignored:** The tenant is never taken from the path, query, body or any header (including `X-Smoke-Tenant`), once the smoke provider is removed.
-- **Registration creates the owner:** Given a valid registration with the owner's e-mail and password, then the organization, its tenant and one owner user are created together, and the owner can then authenticate and reach tenant endpoints for that tenant.
-- **All or nothing:** Given owner creation fails (for example a rejected credential or an e-mail that is already taken), then registration fails, and no organization, tenant or user exists afterwards.
-- **No secrets leak:** The password is never returned, echoed in an error or logged, and responses never contain a password hash.
+- **Authenticated request:** Given a valid token of user U in tenant A, when U calls a tenant endpoint, then the command's tenant is A and the response is as before.
+- **Unauthenticated or invalid:** Given no token, an invalid or expired one, or a valid token whose `tenantId` claim is missing or malformed, then the response is 401 `TENANT_NOT_RESOLVED` with `WWW-Authenticate: Bearer realm="quine-erp"`, the standard `ApiErrorResponse` body, and no handler runs.
+- **401 before 400:** On tenant endpoints, an unauthenticated request with a bad body answers 401. The public registration and login endpoints keep answering 400.
+- **Cross-tenant:** Given user U of tenant A and an organization of tenant B, then the response is the same 404 as a missing organization, and the 404 bodies (`code`, `message`) are identical for a missing and a foreign organization.
+- **Caller input ignored:** The tenant comes only from the token's `tenantId` claim, never from the path, query, body or any header (including `X-Smoke-Tenant`).
+- **Registration stays public:** `POST /api/organizations` and `POST /api/auth/login` need no token. Registration does not return a token, a password or a hash.
+- **Registration creates the owner:** Given valid registration data with the owner's e-mail and password, then the organization, its tenant and one owner user are created together, and the owner can then log in and reach tenant endpoints for that tenant.
+- **All or nothing:** Given owner creation fails (a rejected credential, or an e-mail already taken), then registration fails and no organization, tenant or user exists afterwards.
+- **E-mail rules:** E-mails are trimmed and lower-cased before the uniqueness check, which is case-insensitive and platform-wide. `@Email` has the pinned text `must be a valid e-mail address`.
+- **Password rules:** The password is `@NotBlank` with `@Size(min=12, max=72)`. It is never returned, echoed in an error, logged, or present in any message, and responses never contain a hash.
+- **Login failure:** An unknown e-mail and a wrong password both answer the same 401 `INVALID_CREDENTIALS` with the same message. The comparison does the same hashing work on both paths, to avoid revealing which e-mails exist.
+- **Fail closed:** If a token cannot be verified, the answer is 401, never a default tenant. The app refuses to start without `QUINE_JWT_SECRET`.
 - **Stand-ins gone:** `FailClosedTenantProvider` and `SmokeTenantProvider` no longer exist, the app still starts, and the Postman collection runs against real authentication.
-- **Fail closed:** If identity cannot be reached or a token cannot be verified, the answer is 401, never a default tenant.
 
 ## Business rules
 
 - No operation on tenant-owned data runs without a resolved tenant.
 - The tenant is established by the platform from the authenticated identity, never from caller-controlled input.
-- A user belongs to exactly one tenant (decision 5).
-- A tenant has exactly one owner at first (decision 3).
+- A user belongs to exactly one tenant (decision 5), and a tenant has exactly one owner at first (decision 3).
 - Registration is all or nothing (decision 4).
+
+## Files and docs that change or break
+
+- `docker-compose.yml`: `SPRING_PROFILES_ACTIVE: smoke` and its comment, plus the new `QUINE_JWT_SECRET`.
+- `docs/postman/quine-erp-organization.postman_collection.json`: about 20 requests carry `X-Smoke-Tenant`; the description says identity is not built; the register body gains the owner fields; the request that sends a `tenantId` in the body must keep it ignored; the "no `tenantId`" assertions need review. Also `quine-erp-local.postman_environment.json`.
+- `bootstrap/src/main/resources/application.yaml`: per-module Flyway and Hibernate configuration.
+- `CLAUDE.md`: the `bootstrap` description and the Conventions section (providers, 401 and 400 order).
+- `SpringDomainEventPublisher` javadoc, and `validation-message-locale.md` (the new `@Email` row).
+- `README.md`, if it mentions the smoke setup.
+
+## Risks (accepted for T7)
+
+- No token revocation or refresh: a stolen token works until it expires.
+- No rate limiting or lockout on login (brute force).
+- A single symmetric signing key for all tokens.
 
 ## Dependencies
 
@@ -85,17 +125,9 @@ T7 is too large for one change. Suggested order, each independently mergeable:
 
 ## Open questions
 
-**Product owner:** ~~1–5~~ all **resolved 2026-10-02**, see the decisions table. New, smaller questions the answers raise:
-- **E-mail uniqueness.** Since a user belongs to one tenant, must an e-mail be unique across the whole platform? (Suggested: yes.)
-- **Password policy.** Minimum length or other rules? (Suggested: a minimum length only, to start.)
+**Architect:** ~~6–13~~ all **resolved**, see the decisions table.
 
-**Architect**
-
-6. ~~How `identity` consumes `OrganizationRegistered`~~ **Requirement now fixed by decision 4: all or nothing.** The Architect chooses the mechanism that gives it: a plain `@EventListener` in the registration transaction, or `identity` called through a port by the registration handler. An `AFTER_COMMIT` listener is ruled out because it can leave an organization without an owner.
-7. **Module boundaries.** Does `organization` stay unaware of users (events only), and does `identity` publish the `CurrentTenantProvider` implementation that `bootstrap` wires? Which module owns the security filter?
-8. **Slicing.** Confirm T7a, T7b and T7c. With decisions 2–4, T7c is "registration collects credentials and creates the owner atomically"; confirm it may land after T7b, or whether registration must change first.
-9. **400 before 401.** With a filter that authenticates first, requests with a bad body from an unauthenticated caller become 401. Confirm this is the intended order and list the ticket and test updates.
-10. **Local runs.** What replaces the `smoke` profile for local Postman runs: a seeded test user, a dev-only token endpoint, or something else?
-11. **How login is carried per request** (decision 1 leaves it open): signed token or server session, where credentials are stored (hashing algorithm), and where the login endpoint lives.
-12. **Registration request validation (T6 convention).** The owner's e-mail needs a validation constraint, and `@Email` has no pinned text yet: a pinned text, a table row and a guard-test update are required (`validation-message-locale.md`). The password must never appear in any message.
-13. **Existing API consumers.** Changing the registration request is a breaking change for the Postman collection and any client. Confirm how it is rolled out.
+**Product owner (small confirmations; the ticket proceeds on the suggested answers)**
+- **E-mail uniqueness:** platform-wide, because a user belongs to one tenant. *(Suggested: yes.)*
+- **Password length:** the Architect proposes a minimum of 12 characters and a maximum of 72. *(Confirm.)*
+- **External clients of the registration endpoint:** none, so the request can change without versioning. *(Confirm.)*
