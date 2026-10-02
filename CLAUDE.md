@@ -45,9 +45,19 @@ bounded context: `shared`, `organization`, `identity`, `customer`, `supplier`, `
 - **`shared`** is the shared kernel: `AggregateRoot`, `DomainEvent`, `BusinessRule` (+
   `BusinessRuleViolationException`), `DomainException`, `TenantId`. Every other module depends on it and
   builds its own aggregates/rules on top of these base types.
-- **`bootstrap`** is the composition root intended to wire the business modules into one
-  runnable Spring Boot application. It currently has no dependencies on the other modules and
-  no Spring Boot parent/starter wired in yet — it's a placeholder, not yet runnable.
+- **`bootstrap`** is the composition root: a Spring Boot app (`QuineApplication`) that wires the
+  business modules (today only `organization`). Until identity (T7) exists there is no real tenant
+  source: without a profile every tenant-scoped endpoint answers 401 (`FailClosedTenantProvider`).
+  The `smoke` profile reads the tenant from an `X-Smoke-Tenant` header and adds a
+  `/smoke/organizations/{id}/activate` shortcut, for local runs only:
+
+  ```bash
+  docker compose up -d --build   # Postgres + app with the smoke profile on :18080
+  # or, with Postgres on localhost:15432:
+  java -jar bootstrap/target/bootstrap-1.0-SNAPSHOT.jar --spring.profiles.active=smoke
+  ```
+
+  The Postman collection in `docs/postman/` runs against it.
 - **`organization`** is the only fully implemented business module and is the reference to
   follow when building out the others (same package layout, same CQRS-ish handler pattern,
   same test layering).
