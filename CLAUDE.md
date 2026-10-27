@@ -184,3 +184,9 @@ shared web component for the error contract (its `CONCURRENT_MODIFICATION` messa
 
 - Use 2 space for indentation
 - All API routest start /api
+
+## Security
+
+- Credentials (passwords, API keys, tokens, secrets, connection strings with embedded passwords, private
+  keys) must never be written in files that will be committed. Use environment variables or untracked
+  local files (git-ignored) instead. This applies to every session.
