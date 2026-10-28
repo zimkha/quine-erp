@@ -42,5 +42,11 @@ class SettableTenantProvider implements CurrentTenantProvider {
     SettableTenantProvider currentTenantProvider() {
       return new SettableTenantProvider();
     }
+
+    /** No identity module in this test context: the owner is not stored. */
+    @Bean
+    com.zim.organization.application.port.OwnerRegistrar ownerRegistrar() {
+      return (tenantId, email, password) -> { };
+    }
   }
 }

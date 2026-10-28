@@ -28,6 +28,7 @@
 | `@NotNull` | `must not be null` |
 | `@Size` | `size must be between {min} and {max}` |
 | `@Pattern` | `must match the required format` |
+| `@Email` | `must be a valid e-mail address` |
 | Anything else, or a `FieldError` without a `ConstraintViolation` (e.g. binding `typeMismatch`) | `is invalid` |
 
 `@NotBlank`, `@NotNull` and `@Size` are identical to today's English output. Only `@Pattern` changes.
@@ -132,7 +133,7 @@ Each scenario must hold with the JVM default locale set to `FRENCH`, and separat
 - **R3.** The validation message format stays `"<field>: <text>"`, joined with `"; "`. Parts are in natural `String` order (no `Collator`), with duplicates removed.
 - **R4.** Clients rely only on `code`, the stable machine-readable contract. `message` is developer-facing, human-readable English, and clients must not parse it (product-owner decision, 2026-09-28).
 - **R5.** Localized end-user error text is the client's job: it maps `code` to its own translated text. The server always returns English `message` text and ignores `Accept-Language` for errors (product-owner decision, 2026-09-28).
-
+- **R6.** Have for each error messages an english version (for next version)
 ## Definition of done
 
 - **Helper:** `FieldErrorMessages` (or similar) in `presentation.rest.exception`.

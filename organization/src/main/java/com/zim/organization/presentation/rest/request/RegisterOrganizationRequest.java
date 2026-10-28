@@ -1,5 +1,6 @@
 package com.zim.organization.presentation.rest.request;
 
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -30,6 +31,27 @@ public record RegisterOrganizationRequest(
 
     @NotBlank
     @Size(min = 2, max = 120)
-    String headquartersName
+    String headquartersName,
+
+    @NotBlank
+    @Email
+    @Size(max = 254)
+    String ownerEmail,
+
+    @NotBlank
+    @Size(min = 12, max = 72)
+    String ownerPassword
 ) {
+
+  /** The password must never reach a log line. */
+  @Override
+  public String toString() {
+    return "RegisterOrganizationRequest[organizationName=" + organizationName
+        + ", legalName=" + legalName
+        + ", currencyCode=" + currencyCode
+        + ", headquartersCode=" + headquartersCode
+        + ", headquartersName=" + headquartersName
+        + ", ownerEmail=" + ownerEmail
+        + ", ownerPassword=[PROTECTED]]";
+  }
 }

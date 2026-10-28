@@ -22,6 +22,7 @@ public class RegisterOrganizationHandler {
   private final EventIdGenerator eventIdGenerator;
   private final ClockProvider clockProvider;
   private final DomainEventPublisher domainEventPublisher;
+  private final OwnerRegistrar ownerRegistrar;
 
   public RegisterOrganizationHandler(
       OrganizationRepository organizationRepository,
@@ -30,7 +31,8 @@ public class RegisterOrganizationHandler {
       StoreIdGenerator storeIdGenerator,
       EventIdGenerator eventIdGenerator,
       ClockProvider clockProvider,
-      DomainEventPublisher domainEventPublisher
+      DomainEventPublisher domainEventPublisher,
+      OwnerRegistrar ownerRegistrar
   ) {
     this.organizationRepository =
         Objects.requireNonNull(organizationRepository);
@@ -46,6 +48,8 @@ public class RegisterOrganizationHandler {
         Objects.requireNonNull(clockProvider);
     this.domainEventPublisher =
         Objects.requireNonNull(domainEventPublisher);
+    this.ownerRegistrar =
+        Objects.requireNonNull(ownerRegistrar);
   }
 
   public RegisterOrganizationResult handle(
@@ -89,6 +93,13 @@ public class RegisterOrganizationHandler {
     );
 
     organizationRepository.save(organization);
+
+    // All or nothing: a failure here rolls back the save above.
+    ownerRegistrar.register(
+        tenantId,
+        command.ownerEmail(),
+        command.ownerPassword()
+    );
 
     domainEventPublisher.publish(
         organization.pullDomainEvents()

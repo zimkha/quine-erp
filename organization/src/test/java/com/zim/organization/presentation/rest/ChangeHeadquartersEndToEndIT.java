@@ -171,7 +171,9 @@ class ChangeHeadquartersEndToEndIT {
             "Quincaillerie Thiès " + UUID.randomUUID(),
             "XOF",
             "THIES-01",
-            "Magasin principal"
+            "Magasin principal",
+            "owner-" + UUID.randomUUID() + "@example.com",
+            "placeholder-owner-value"
         )
     );
   }

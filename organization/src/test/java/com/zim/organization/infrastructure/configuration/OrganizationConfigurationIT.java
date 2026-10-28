@@ -49,7 +49,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @Import({
     OrganizationConfiguration.class,
-    OrganizationConfigurationIT.CommittedEventCollector.class
+    OrganizationConfigurationIT.CommittedEventCollector.class,
+    OrganizationConfigurationIT.NoOpOwnerRegistrarConfiguration.class
 })
 class OrganizationConfigurationIT extends PostgresIntegrationTest {
 
@@ -198,7 +199,9 @@ class OrganizationConfigurationIT extends PostgresIntegrationTest {
                 "Quincaillerie Thiès " + UUID.randomUUID(),
                 "XOF",
                 "THIES-01",
-                "Magasin principal"
+                "Magasin principal",
+                "owner-" + UUID.randomUUID() + "@example.com",
+                "placeholder-owner-value"
             )
         );
     TenantId tenantId = new TenantId(registered.tenantId());
@@ -253,6 +256,16 @@ class OrganizationConfigurationIT extends PostgresIntegrationTest {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     void on(DomainEvent event) {
       events.add(event);
+    }
+  }
+
+  /** No identity module in this test context: the owner is not stored. */
+  @org.springframework.boot.test.context.TestConfiguration
+  static class NoOpOwnerRegistrarConfiguration {
+
+    @org.springframework.context.annotation.Bean
+    com.zim.organization.application.port.OwnerRegistrar ownerRegistrar() {
+      return (tenantId, email, password) -> { };
     }
   }
 }

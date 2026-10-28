@@ -142,7 +142,8 @@ class OrganizationControllerTest {
         () -> new StoreId(HEADQUARTERS_ID),
         UUID::randomUUID,
         () -> CREATED_AT,
-        new InMemoryDomainEventPublisher()
+        new InMemoryDomainEventPublisher(),
+        (tenantId, email, password) -> { }
     );
     when(registerOrganizationHandler.handle(any())).thenAnswer(invocation ->
         realHandler.handle(invocation.getArgument(0))
@@ -155,7 +156,9 @@ class OrganizationControllerTest {
          "legalName": "Quincaillerie Thiès SARL",
          "currencyCode": "XOF",
          "headquartersCode": "THIES-01",
-         "headquartersName": "Magasin principal"
+         "headquartersName": "Magasin principal",
+         "ownerEmail": "owner@example.com",
+         "ownerPassword": "placeholder-owner-value"
         }
         """.formatted(OTHER_TENANT_ID);
 
@@ -198,7 +201,9 @@ class OrganizationControllerTest {
          "legalName": "Quincaillerie Thiès SARL",
          "currencyCode": "XOF",
          "headquartersCode": "THIES-01",
-         "headquartersName": "Magasin principal"
+         "headquartersName": "Magasin principal",
+         "ownerEmail": "owner@example.com",
+         "ownerPassword": "placeholder-owner-value"
         }
         """;
 
@@ -254,7 +259,9 @@ class OrganizationControllerTest {
        "legalName": "",
        "currencyCode": "XO",
        "headquartersCode": "",
-       "headquartersName": ""
+       "headquartersName": "",
+       "ownerEmail": "",
+       "ownerPassword": ""
       }
       """;
 
@@ -271,7 +278,10 @@ class OrganizationControllerTest {
                 + "legalName: must not be blank; "
                 + "legalName: size must be between 2 and 160; "
                 + "organizationName: must not be blank; "
-                + "organizationName: size must be between 2 and 120"
+                + "organizationName: size must be between 2 and 120; "
+                + "ownerEmail: must not be blank; "
+                + "ownerPassword: must not be blank; "
+                + "ownerPassword: size must be between 12 and 72"
         ));
 
     verify(
@@ -297,7 +307,9 @@ class OrganizationControllerTest {
        "legalName": "Quincaillerie Thiès SARL",
        "currencyCode": "XOF",
        "headquartersCode": "THIES-01",
-       "headquartersName": "Magasin principal"
+       "headquartersName": "Magasin principal",
+         "ownerEmail": "owner@example.com",
+         "ownerPassword": "placeholder-owner-value"
       }
       """;
 
@@ -417,6 +429,48 @@ class OrganizationControllerTest {
             .value("The request conflicts with existing data"));
   }
 
+  /** Owner creation failed inside the handler: the usual 409, no secret. */
+  @Test
+  void shouldReturnConflictWithoutThePasswordWhenTheEmailIsTaken()
+      throws Exception {
+    when(registerOrganizationHandler.handle(any())).thenThrow(
+        new com.zim.shared.domain.BusinessRuleViolationException(
+            new com.zim.shared.domain.BusinessRule() {
+              @Override
+              public boolean isBroken() {
+                return true;
+              }
+
+              @Override
+              public String code() {
+                return "EMAIL_ALREADY_EXISTS";
+              }
+
+              @Override
+              public String message() {
+                return "A user with this e-mail already exists";
+              }
+            }
+        )
+    );
+
+    String body = register(validRequestWith("legalName", "Quincaillerie Thiès SARL"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("EMAIL_ALREADY_EXISTS"))
+        .andReturn().getResponse().getContentAsString();
+
+    assertThat(body).doesNotContain("placeholder-owner-value");
+  }
+
+  @Test
+  void shouldNeverEchoThePasswordInAValidationError() throws Exception {
+    String body = register(validRequestWith("ownerEmail", "not-an-email"))
+        .andExpect(status().isBadRequest())
+        .andReturn().getResponse().getContentAsString();
+
+    assertThat(body).doesNotContain("placeholder-owner-value");
+  }
+
   private ResultActions register(String body) throws Exception {
     return mockMvc.perform(
         post("/api/organizations")
@@ -463,6 +517,18 @@ class OrganizationControllerTest {
             "currencyCode: must not be blank"),
         Arguments.of("headquartersName", "   ",
             "headquartersName: must not be blank"),
+        Arguments.of("ownerEmail", "not-an-email",
+            "ownerEmail: must be a valid e-mail address"),
+        Arguments.of("ownerEmail", "   ",
+            "ownerEmail: must be a valid e-mail address; "
+                + "ownerEmail: must not be blank"),
+        Arguments.of("ownerPassword", "too-short",
+            "ownerPassword: size must be between 12 and 72"),
+        Arguments.of("ownerPassword", "x".repeat(73),
+            "ownerPassword: size must be between 12 and 72"),
+        Arguments.of("ownerPassword", "   ",
+            "ownerPassword: must not be blank; "
+                + "ownerPassword: size must be between 12 and 72"),
         Arguments.of("headquartersCode", "   ",
             "headquartersCode: must match the required format; "
                 + "headquartersCode: must not be blank")
@@ -476,6 +542,8 @@ class OrganizationControllerTest {
     fields.put("currencyCode", "XOF");
     fields.put("headquartersCode", "THIES-01");
     fields.put("headquartersName", "Magasin principal");
+    fields.put("ownerEmail", "owner@example.com");
+    fields.put("ownerPassword", "placeholder-owner-value");
     fields.put(field, value);
 
     return fields.entrySet()

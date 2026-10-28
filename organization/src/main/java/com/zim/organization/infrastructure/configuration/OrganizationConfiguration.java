@@ -10,6 +10,7 @@ import com.zim.organization.application.port.ClockProvider;
 import com.zim.organization.application.port.DomainEventPublisher;
 import com.zim.organization.application.port.EventIdGenerator;
 import com.zim.organization.application.port.OrganizationIdGenerator;
+import com.zim.organization.application.port.OwnerRegistrar;
 import com.zim.organization.application.port.StoreIdGenerator;
 import com.zim.organization.application.port.TenantIdGenerator;
 import com.zim.organization.domain.repository.OrganizationRepository;
@@ -106,6 +107,7 @@ public class OrganizationConfiguration {
       EventIdGenerator eventIdGenerator,
       ClockProvider clockProvider,
       DomainEventPublisher domainEventPublisher,
+      OwnerRegistrar ownerRegistrar,
       PlatformTransactionManager transactionManager
   ) {
     return transactional(
@@ -116,7 +118,8 @@ public class OrganizationConfiguration {
             storeIdGenerator,
             eventIdGenerator,
             clockProvider,
-            domainEventPublisher
+            domainEventPublisher,
+            ownerRegistrar
         ),
         transactionManager
     );

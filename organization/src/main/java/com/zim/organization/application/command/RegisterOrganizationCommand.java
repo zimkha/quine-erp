@@ -7,7 +7,9 @@ public record RegisterOrganizationCommand(
         String legalName,
         String currencyCode,
         String headquartersCode,
-        String headquartersName
+        String headquartersName,
+        String ownerEmail,
+        String ownerPassword
 ) {
     public RegisterOrganizationCommand {
         Objects.requireNonNull(
@@ -30,5 +32,25 @@ public record RegisterOrganizationCommand(
                 headquartersName,
                 "Headquarters name cannot be null"
         );
+        Objects.requireNonNull(
+                ownerEmail,
+                "Owner e-mail cannot be null"
+        );
+        Objects.requireNonNull(
+                ownerPassword,
+                "Owner password cannot be null"
+        );
+    }
+
+    /** The password is a raw string here, so it is masked. */
+    @Override
+    public String toString() {
+        return "RegisterOrganizationCommand[organizationName="
+                + organizationName + ", legalName=" + legalName
+                + ", currencyCode=" + currencyCode
+                + ", headquartersCode=" + headquartersCode
+                + ", headquartersName=" + headquartersName
+                + ", ownerEmail=" + ownerEmail
+                + ", ownerPassword=[PROTECTED]]";
     }
 }
