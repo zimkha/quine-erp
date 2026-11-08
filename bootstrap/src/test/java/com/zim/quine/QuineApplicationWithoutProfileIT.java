@@ -19,6 +19,7 @@ class QuineApplicationWithoutProfileIT {
     registry.add("spring.datasource.url", PostgresContainerSupport.POSTGRES::getJdbcUrl);
     registry.add("spring.datasource.username", PostgresContainerSupport.POSTGRES::getUsername);
     registry.add("spring.datasource.password", PostgresContainerSupport.POSTGRES::getPassword);
+    registry.add("quine.security.tenant.jwt.secret", TestJwtSecret::value);
   }
 
   @Autowired

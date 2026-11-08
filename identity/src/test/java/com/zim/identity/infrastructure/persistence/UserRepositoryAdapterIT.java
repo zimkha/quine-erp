@@ -121,6 +121,46 @@ class UserRepositoryAdapterIT extends PostgresIntegrationTest {
         .isInstanceOf(DataIntegrityViolationException.class);
   }
 
+  @Test
+  void shouldFindAndDetectAnEmailWhateverTheCaseItIsGivenIn() {
+    String email = unique("camel");
+    repository.save(owner(TenantId.generate(), email));
+
+    String shouted = email.toUpperCase(java.util.Locale.ROOT);
+    assertThat(repository.findByEmail(new Email("  " + shouted + " "))).isPresent();
+    assertThat(repository.existsByEmail(new Email(shouted))).isTrue();
+  }
+
+  /**
+   * Login is unauthenticated, so the lookup must use the unique index on
+   * lower(email): with enough rows the planner picks it, which it cannot do
+   * for a comparison on the bare column.
+   */
+  @Test
+  void shouldServeTheEmailLookupFromTheLowerEmailIndex() {
+    jdbcTemplate.update(
+        "INSERT INTO identity.users "
+            + "(id, tenant_id, email, password_hash, owner, created_at) "
+            + "SELECT gen_random_uuid(), gen_random_uuid(), "
+            + "'bulk-' || g || '@example.com', '$2a$10$hash', false, now() "
+            + "FROM generate_series(1, 5000) g"
+    );
+    jdbcTemplate.execute("ANALYZE identity.users");
+
+    java.util.List<String> lookup = jdbcTemplate.queryForList(
+        "EXPLAIN SELECT * FROM identity.users WHERE lower(email) = ?",
+        String.class, "bulk-42@example.com"
+    );
+    java.util.List<String> bareColumn = jdbcTemplate.queryForList(
+        "EXPLAIN SELECT * FROM identity.users WHERE email = ?",
+        String.class, "bulk-42@example.com"
+    );
+
+    assertThat(String.join("\n", lookup)).contains("uk_users_email");
+    assertThat(String.join("\n", bareColumn)).contains("Seq Scan");
+    assertThat(repository.findByEmail(new Email("BULK-42@example.com"))).isPresent();
+  }
+
   private void insertRaw(String email, String passwordHash) {
     jdbcTemplate.update(
         "INSERT INTO identity.users "

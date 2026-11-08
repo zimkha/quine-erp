@@ -57,27 +57,42 @@ bounded context: `shared`, `web-shared`, `organization`, `identity`, `customer`,
   `AdviceAssertions`) is the shared test support. `maven-enforcer-plugin` `bannedDependencies` in each
   module pom forbids `organization` and `identity` from depending on each other.
 - **`bootstrap`** is the composition root: a Spring Boot app (`QuineApplication`) that wires the
-  business modules (today `organization` and `identity`). Until login (T7b) exists there is no real tenant
-  source: without a profile every tenant-scoped endpoint answers 401 (`FailClosedTenantProvider`).
+  business modules (today `organization` and `identity`). Until the filter chain (T7b-2) exists there is no real tenant
+  source (login and token issue exist since T7b-1, but tokens are not honoured): without a profile every tenant-scoped endpoint answers 401 (`FailClosedTenantProvider`).
   The `smoke` profile reads the tenant from an `X-Smoke-Tenant` header and adds a
   `/smoke/organizations/{id}/activate` shortcut, for local runs only (it refuses to start together with any
   profile other than `smoke`, `local`, `dev`, `test` or `docker`):
 
   ```bash
-  docker compose up -d --build   # Postgres + app with the smoke profile on :18080
-  # or, with Postgres on localhost:15432:
+  # No credential is committed. Export them first (random, local only; or put them in a git-ignored .env):
+  export QUINE_DB_PASSWORD=$(openssl rand -hex 16)
+  export QUINE_JWT_SECRET=$(openssl rand -base64 32)   # key of the TENANT token chain
+
+  docker compose up -d --build   # Postgres + app with the smoke profile on 127.0.0.1:18080
+  # or, with Postgres on localhost:15432 (same QUINE_DB_PASSWORD):
   java -jar bootstrap/target/bootstrap-1.0-SNAPSHOT.jar --spring.profiles.active=smoke
   ```
+
+  `QUINE_JWT_SECRET` is required (standard Base64, at least 32 decoded bytes): the application refuses to start
+  without it, and the error never prints its value. `QUINE_DB_PASSWORD` has no default either. Compose publishes
+  Postgres and the app on `127.0.0.1` only and stops with the name of any missing variable.
 
   The Postman collection in `docs/postman/` runs against it.
 - **`organization`** is the only fully implemented business module and is the reference to
   follow when building out the others (same package layout, same CQRS-ish handler pattern,
   same test layering).
-- **`identity`** is implemented as far as T7a: the `User` aggregate (e-mail, BCrypt password hash, one owner
-  per tenant), `CreateOwnerHandler` and its own `identity` schema. Login, tokens and the security filter
-  are T7b (deferred). Registration creates the owner (T7c): `POST /api/organizations` takes `ownerEmail` and
+- **`identity`** is implemented as far as T7b-1: the `User` aggregate (e-mail, BCrypt password hash, one owner
+  per tenant), `CreateOwnerHandler`, its own `identity` schema, and **login and token issue**: `POST /api/auth/login`
+  (`LoginHandler`, public) checks the credentials and returns `{accessToken, tokenType, expiresIn}`, an HS256 JWT
+  (`sub` = user id, claim `tenantId`, `aud` = `quine-tenant`, no e-mail or password) signed by `NimbusJwtEncoder`.
+  Failures are one `401 INVALID_CREDENTIALS` (unknown or malformed e-mail, wrong, short or over-72-byte password) with
+  one BCrypt check on every path. Properties: `quine.security.tenant.jwt.secret` (from `QUINE_JWT_SECRET`) and
+  `quine.security.tenant.jwt.ttl-minutes` (default 30, allowed 1 to 120). **There is no Spring Security chain yet**
+  (only `spring-security-oauth2-jose`, never a `spring-boot-starter-security*`): tokens are issued but not honoured, and
+  the tenant provider is still the smoke or fail-closed stand-in until T7b-2 (filter chain, real `CurrentTenantProvider`,
+  end of the stand-ins). Registration creates the owner (T7c): `POST /api/organizations` takes `ownerEmail` and
   `ownerPassword`, and `OwnerRegistrar` (an `organization` port) is implemented in `bootstrap` over `CreateOwnerHandler`,
-  in the registration transaction (all or nothing); the owner cannot log in until T7b. See `docs/tickets/identity-T7.md`.
+  in the registration transaction (all or nothing). See `docs/tickets/identity-T7.md`.
 - The other business modules (`customer`, `supplier`, `catalog`, `inventory`,
   `purchasing`, `sales`, `cash`, `notification`, `reporting`) are scaffolded (POM only, single
   placeholder `Main.java`) and not yet implemented.
@@ -149,7 +164,7 @@ explains why. Full list and rationale: `docs/tickets/cross-module-conventions-T6
 - Another tenant's aggregate looks exactly like a missing one: the same 404, never 409 or 403.
 - Providers fail closed (`TenantNotResolvedException`, 401). The only production default is
   `FailClosedTenantProvider` in `bootstrap` (`!smoke` profile; `smoke` swaps in a local-only
-  `SmokeTenantProvider`), removed when `identity` (T7) lands. Modules ship no default of their own.
+  `SmokeTenantProvider`), removed in T7b-2, when the identity filter chain lands. Modules ship no default of their own.
 - Tenant-scoped endpoints get their own controller; the public one (register) never injects the provider.
 
 **Errors** (`docs/tickets/endpoints-T5.md`, shared contract)

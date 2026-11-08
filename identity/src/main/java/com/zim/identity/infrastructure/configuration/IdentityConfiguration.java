@@ -1,8 +1,11 @@
 package com.zim.identity.infrastructure.configuration;
 
 import com.zim.identity.application.handler.CreateOwnerHandler;
+import com.zim.identity.application.handler.LoginHandler;
+import com.zim.identity.application.port.AccessTokenIssuer;
 import com.zim.identity.application.port.ClockProvider;
 import com.zim.identity.application.port.PasswordHasher;
+import com.zim.identity.application.port.PasswordVerifier;
 import com.zim.identity.application.port.UserIdGenerator;
 import com.zim.identity.domain.repository.UserRepository;
 import com.zim.identity.domain.valueobject.UserId;
@@ -13,6 +16,7 @@ import com.zim.identity.infrastructure.security.BcryptPasswordHasher;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.interceptor.DefaultTransactionAttribute;
 import org.springframework.transaction.interceptor.NameMatchTransactionAttributeSource;
@@ -22,7 +26,11 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Configuration
+@Import(TenantJwtConfiguration.class)
 public class IdentityConfiguration {
+
+  /** One encoder behind both ports, so the dummy hash costs what a real one does. */
+  private final BcryptPasswordHasher bcrypt = new BcryptPasswordHasher();
 
   @Bean
   UserPersistenceMapper userPersistenceMapper() {
@@ -39,7 +47,12 @@ public class IdentityConfiguration {
 
   @Bean
   PasswordHasher passwordHasher() {
-    return new BcryptPasswordHasher();
+    return bcrypt;
+  }
+
+  @Bean
+  PasswordVerifier passwordVerifier() {
+    return bcrypt;
   }
 
   @Bean
@@ -72,6 +85,27 @@ public class IdentityConfiguration {
             identityClockProvider
         ),
         transactionManager
+    );
+  }
+
+  /**
+   * Not transactional: one read, and BCrypt must not hold a connection
+   * while it works.
+   */
+  @Bean
+  LoginHandler loginHandler(
+      UserRepository userRepository,
+      PasswordHasher passwordHasher,
+      PasswordVerifier passwordVerifier,
+      AccessTokenIssuer tenantAccessTokenIssuer,
+      ClockProvider identityClockProvider
+  ) {
+    return new LoginHandler(
+        userRepository,
+        passwordHasher,
+        passwordVerifier,
+        tenantAccessTokenIssuer,
+        identityClockProvider
     );
   }
 

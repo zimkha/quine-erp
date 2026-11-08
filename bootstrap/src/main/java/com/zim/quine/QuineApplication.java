@@ -1,6 +1,8 @@
 package com.zim.quine;
 
 import com.zim.identity.infrastructure.configuration.IdentityConfiguration;
+import com.zim.identity.presentation.rest.AuthController;
+import com.zim.identity.presentation.rest.exception.IdentityApiExceptionHandler;
 import com.zim.organization.infrastructure.configuration.OrganizationConfiguration;
 import com.zim.organization.presentation.rest.OrganizationController;
 import com.zim.organization.presentation.rest.TenantOrganizationController;
@@ -29,6 +31,8 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
     OrganizationController.class,
     TenantOrganizationController.class,
     ApiExceptionHandler.class,
+    AuthController.class,
+    IdentityApiExceptionHandler.class,
     WebSharedConfiguration.class
 })
 public class QuineApplication {

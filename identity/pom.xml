@@ -25,6 +25,22 @@
             <version>${project.version}</version>
         </dependency>
 
+        <dependency>
+            <groupId>com.zim.quine</groupId>
+            <artifactId>web-shared</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- REST (login) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
         <!-- PERSISTENCE -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -50,13 +66,33 @@
             <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
 
-        <!-- PASSWORD HASHING (BCrypt only, no web security yet: that is T7b) -->
+        <!-- PASSWORD HASHING (BCrypt) -->
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-crypto</artifactId>
         </dependency>
 
+        <!-- TOKEN ISSUE (HS256 encoder only). Never a Spring Security starter
+             (spring-boot-starter-security*): it would secure every route with
+             a default chain. The filter chain is T7b-2. Version managed by the BOM. -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-oauth2-jose</artifactId>
+        </dependency>
+
         <!-- TESTS -->
+        <dependency>
+            <groupId>com.zim.quine</groupId>
+            <artifactId>web-shared</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
