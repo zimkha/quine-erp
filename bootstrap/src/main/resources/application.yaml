@@ -10,3 +10,16 @@ spring:
 
 server:
   port: ${QUINE_PORT:18080}
+
+quine:
+  security:
+    # Key and lifetime of the TENANT access token (T7b-1). A platform chain
+    # would be a sibling of "tenant" with its own key.
+    tenant:
+      jwt:
+        # Standard Base64, at least 32 decoded bytes. No default: the
+        # application refuses to start without it, whatever its value.
+        secret: ${QUINE_JWT_SECRET}
+        # Whole minutes, from 1 to 120 (default 30). No refresh token: the
+        # user logs in again when it expires, plus 60 s of decoder clock skew.
+        ttl-minutes: 30

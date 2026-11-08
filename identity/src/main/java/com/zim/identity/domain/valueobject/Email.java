@@ -4,6 +4,7 @@ import com.zim.identity.domain.exception.InvalidValueException;
 
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
@@ -29,18 +30,39 @@ public final class Email {
   public Email(String value) {
     Objects.requireNonNull(value, "E-mail cannot be null");
 
+    this.value = parse(value)
+        .orElseThrow(() -> new InvalidValueException(
+            "INVALID_EMAIL",
+            "E-mail must be a valid address of at most %d characters"
+                .formatted(MAX_LENGTH)
+        ))
+        .value;
+  }
+
+  private Email(String normalized, boolean alreadyValidated) {
+    this.value = normalized;
+  }
+
+  /**
+   * Same normalization (trim, lower-case) and same validation as the
+   * constructor, but a malformed address is an empty result, not an
+   * exception: the unauthenticated login path must not use exceptions for
+   * control flow, and a malformed address takes the same path as an unknown
+   * one. A {@code null} is also empty.
+   */
+  public static Optional<Email> parse(String value) {
+    if (value == null) {
+      return Optional.empty();
+    }
+
     String normalized = value.trim().toLowerCase(Locale.ROOT);
 
     if (normalized.length() > MAX_LENGTH
         || !STRUCTURE.matcher(normalized).matches()) {
-      throw new InvalidValueException(
-          "INVALID_EMAIL",
-          "E-mail must be a valid address of at most %d characters"
-              .formatted(MAX_LENGTH)
-      );
+      return Optional.empty();
     }
 
-    this.value = normalized;
+    return Optional.of(new Email(normalized, true));
   }
 
   public String value() {

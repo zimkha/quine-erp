@@ -4,6 +4,7 @@ import com.zim.organization.application.command.RegisterOrganizationCommand;
 import com.zim.organization.application.handler.RegisterOrganizationHandler;
 import com.zim.quine.PostgresContainerSupport;
 import com.zim.quine.QuineApplication;
+import com.zim.quine.TestJwtSecret;
 import com.zim.shared.domain.BusinessRuleViolationException;
 import org.junit.jupiter.api.Test;
 import org.springframework.aop.support.AopUtils;
@@ -47,6 +48,7 @@ class RegistrationCreatesOwnerIT {
     registry.add("spring.datasource.url", PostgresContainerSupport.POSTGRES::getJdbcUrl);
     registry.add("spring.datasource.username", PostgresContainerSupport.POSTGRES::getUsername);
     registry.add("spring.datasource.password", PostgresContainerSupport.POSTGRES::getPassword);
+    registry.add("quine.security.tenant.jwt.secret", TestJwtSecret::value);
   }
 
   @Autowired

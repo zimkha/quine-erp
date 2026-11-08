@@ -50,10 +50,18 @@
             <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
 
-        <!-- PASSWORD HASHING (BCrypt only, no web security yet: that is T7b) -->
+        <!-- PASSWORD HASHING (BCrypt) -->
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-crypto</artifactId>
+        </dependency>
+
+        <!-- TOKEN ISSUE (HS256 encoder only). Never a Spring Security starter
+             (spring-boot-starter-security*): it would secure every route with
+             a default chain. The filter chain is T7b-2. Version managed by the BOM. -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-oauth2-jose</artifactId>
         </dependency>
 
         <!-- TESTS -->
