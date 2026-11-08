@@ -182,3 +182,35 @@ Architect: A1 to A7 in `identity-T7.md`, "T7b, detail and adjustments". Product 
 - Merged: T1 to T6, T7a, T7c, T9g.
 - Blocks: T7b-1 (identity's login controller and advice need `ApiErrorResponse` and the generic advice).
 - Independent of T9g and of T9f-1.
+
+## Architect validation (2026-11-08, checked against commit 746f742)
+
+**Verdict: validated with changes.** The changes below prevail over the text above where they differ. Verified facts: `BusinessRuleViolationException` (final, extends `DomainException`) and `DomainException` (not final, `protected` constructors, so a test can subclass it for AC7) are in `com.zim.shared.domain`; both `InvalidValueException` classes (organization and identity) extend `DomainException`, so the generic advice maps them to 422. `FieldErrorMessages` depends on no `organization` class (only `jakarta.validation` and Spring's `FieldError`). `ApiExceptionHandler` has 10 handlers (8 generic, 2 module-owned), is scoped by `basePackageClasses`, and has **no `@Order`**.
+
+### Decisions (answers to A1 to A8)
+
+| # | Decision |
+|---|---|
+| A1 | `web-shared` and `com.zim.shared.web`. **No split package:** `shared` holds `com.zim.shared` (class `Main` only), `.domain` and `.tenant`, and there is no `module-info` (surefire uses `useModulePath=false`). Condition: put nothing in the root package `com.zim.shared`. |
+| A2 | Yes, `BusinessRuleViolationException` (409) and `DomainException` (422) are generic. |
+| A3 | Two commits, as proposed. Neutral wording: `The resource was modified by another request; reload it and retry`. The characterisation test pins the old text first, then the second commit changes that pin and nothing else. |
+| A4 | **Explicit ordering, with a constants class.** Today the organization advice has no `@Order`, so if the generic advice is also lowest there is a tie and the winner depends on bean registration order (non-deterministic). Add `AdviceOrder` in `web-shared`: `GENERIC = LOWEST_PRECEDENCE`, `MODULE = LOWEST_PRECEDENCE - 100`. Put `@Order` on the advice **class** (not on a `@Bean` method). AC5 (via `ControllerAdviceBean.findAnnotatedBeans`) also asserts that every module advice's order is lower than the generic one. |
+| A5 | One explicit `WebSharedConfiguration` with `@Import(GenericExceptionAdvice.class)`. `@Import` de-duplicates a class imported several times; a duplicate only appears if the advice is also declared by `@Bean` or scanned, so do not do both. **No `AutoConfiguration`** (it would not load in a slice, so an omission would be silent) and no `@ConditionalOnMissingBean`. A slice that forgets the import fails loudly (the default Spring 400 has no `code` or `message` keys). Comfort option: one organization presentation configuration that groups controllers, advice and `WebSharedConfiguration`, to shorten the `@Import` lists of the 7 tests. |
+| A6 | `web-shared` test-jar (`test-jar` goal of maven-jar-plugin; consumers declare `<type>test-jar</type><scope>test</scope>`). Put `DefaultLocaleExtension` and `LocaleScenario` in `com.zim.shared.web.testing`. Make the set of pinned constraints in `FieldErrorMessages` public so the DTO guard reuses it, with no second set to keep in sync; the guard keeps filtering its own class because its scan sees the package's test classes. Exclude `web-shared`'s own `@SpringBootConfiguration` test class from the test-jar, or put it in a package that is not an ancestor of a consumer's test package. **Consequence:** `mvn -pl organization test` without `-am` needs `web-shared` (and its test-jar) installed; update the commands in `CLAUDE.md` (`-am`, or `install` first). |
+| A7 | ArchUnit stays a separate ticket T7b-0b. ArchUnit is not managed by the Boot BOM (pin the version in the parent). Verified: `domain` and `application` of organization and identity have no `org.springframework`, and no `getDefaultMessage()` exists in main. Module-to-module dependency bans (AC4) go through `maven-enforcer-plugin` `bannedDependencies` now (see below). |
+| A8 | Servlet-side writer in `web-shared`, with corrections: it uses the Boot bean `tools.jackson.databind.json.JsonMapper` (**Boot 4 ships Jackson 3**, `tools.jackson.core:jackson-databind` 3.1.4, not `com.fasterxml`); it needs `jakarta.servlet-api` in `provided` scope, so "no servlet container" is true only for T7b-0; it has **no Spring Security dependency** (the classes implementing `AuthenticationEntryPoint` and `AccessDeniedHandler` live in `bootstrap`); it writes status and body directly, never `sendError`, with the same JSON content type as the advice; it receives code, message and a flag for the `WWW-Authenticate` header. That is T7b-2 work; T7b-0 only exposes the header constant. |
+
+### Changes to apply to this ticket
+
+1. **Three commits, in this order:** (1) the characterisation test written against the current code, green before any move; (2) the pure extraction, with the `AdviceOrder` constants, AC5 to AC7 and the enforcer rules; (3) the neutral `CONCURRENT_MODIFICATION` wording.
+2. **Maven shape:** add `web-shared` next to `shared` in the root `<modules>` (the order is cosmetic, the reactor sorts by dependency). Dependencies: `shared` (`${project.version}`), `spring-web`, `spring-context` (for `FieldError`), `spring-tx`, `jakarta.validation-api`, all managed by the BOM. **No `spring-webmvc` in main and never `spring-boot-starter-web` (it brings Tomcat).** Test scope: `spring-boot-starter-webmvc-test`, `spring-boot-starter-validation`, JUnit.
+3. **AC4 enforcement:** Maven's cycle detection catches `web-shared` pointing at a business module, but nothing stops `identity` depending on `organization` or the reverse. Use `maven-enforcer-plugin` (already in the parent) with `bannedDependencies` in the `identity` and `organization` poms. This covers AC4 without ArchUnit.
+4. **Docs list additions:** `.claude/agents/dev.md` (lines 36 and 37) and `.claude/agents/code-reviewer.md` (line 43) cite the `ApiExceptionHandler` / `ApiErrorResponse` pattern and must point to `web-shared`. Also `CLAUDE.md` commands (test-jar, `-am`).
+5. **Corrections for other tickets:** after this ticket, T9 A6 (parameter-type message) and the round 2 file list (`FieldErrorMessages` for `reason`) target `web-shared`, not `organization`.
+6. **Facts confirmed:** all test class names listed in "Tests to move or make generic" are exact; `OrganizationConfigurationIT` does not import the advice. There is no test CI in `.github` (only a publication workflow).
+
+### Risks added
+
+- Advice tie without `@Order` (non-deterministic mapping): fixed by A4.
+- Test-jar: commands without `-am` fail until `web-shared` is installed.
+- A second `@SpringBootConfiguration` leaking from the test-jar into a consumer's component scan.
