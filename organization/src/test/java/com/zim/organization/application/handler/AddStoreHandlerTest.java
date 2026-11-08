@@ -304,8 +304,41 @@ class AddStoreHandlerTest {
 
           assertThat(exception.code())
               .isEqualTo(
-                  "ORGANIZATION_MUST_BE_ACTIVE_TO_ADD_STORE"
+                  "ORGANIZATION_PENDING_VALIDATION"
               );
+        });
+
+    assertThat(publisher.publishedEvents()).isEmpty();
+    assertThat(organization.stores()).hasSize(1);
+  }
+
+  @Test
+  void shouldRejectStoreAdditionWhenOrganizationIsSuspended() {
+    Organization organization = activeOrganization();
+    organization.suspend(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-02T12:00:00Z")
+    );
+    organization.clearDomainEvents();
+    repository.add(organization);
+
+    assertThatThrownBy(() -> handler.handle(
+        new AddStoreCommand(
+            new TenantId(TENANT_UUID),
+            ORGANIZATION_UUID,
+            "DAKAR-01",
+            "Magasin Dakar"
+        )
+    ))
+        .isInstanceOf(
+            BusinessRuleViolationException.class
+        )
+        .satisfies(throwable -> {
+          BusinessRuleViolationException exception =
+              (BusinessRuleViolationException) throwable;
+
+          assertThat(exception.code())
+              .isEqualTo("ORGANIZATION_SUSPENDED");
         });
 
     assertThat(publisher.publishedEvents()).isEmpty();

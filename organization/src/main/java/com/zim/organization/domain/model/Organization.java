@@ -204,6 +204,10 @@ public final class Organization  extends AggregateRoot {
     );
 
     checkRule(
+        new OrganizationMustAcceptTenantActionsRule(status)
+    );
+
+    checkRule(
         new OrganizationMustBeClosableRule(status)
     );
 
@@ -233,6 +237,10 @@ public final class Organization  extends AggregateRoot {
     Objects.requireNonNull(
         occurredAt,
         "Occurred at cannot be null"
+    );
+
+    checkRule(
+        new OrganizationMustAcceptTenantActionsRule(status)
     );
 
     checkRule(
@@ -281,6 +289,10 @@ public final class Organization  extends AggregateRoot {
     Objects.requireNonNull(
         occurredAt,
         "Occurred at cannot be null"
+    );
+
+    checkRule(
+        new OrganizationMustAcceptTenantActionsRule(status)
     );
 
     checkRule(
@@ -370,6 +382,10 @@ public final class Organization  extends AggregateRoot {
     Objects.requireNonNull(
         occurredAt,
         "Occurred at cannot be null"
+    );
+
+    checkRule(
+        new OrganizationMustAcceptTenantActionsRule(status)
     );
 
     checkRule(

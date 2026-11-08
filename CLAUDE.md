@@ -147,6 +147,8 @@ explains why. Full list and rationale: `docs/tickets/cross-module-conventions-T6
   `ORGANIZATION_ALREADY_CLOSED`, `STORE_ALREADY_INACTIVE`, `STORE_IS_ALREADY_HEADQUARTERS`): target state
   reached. `..._ALREADY_EXISTS` is a real duplicate conflict. `..._CANNOT_BE_...` means refused from the
   current status. No endpoint is a silent no-op.
+- Family `ORGANIZATION_<STATE>` (`ORGANIZATION_PENDING_VALIDATION`, `ORGANIZATION_SUSPENDED`): a tenant action
+  refused because of the current state, never "target reached" (not in the "already" list). Closure only from `ACTIVE`.
 - Scope each module's `@RestControllerAdvice` with `basePackageClasses`. `ApiErrorResponse` and the
   generic handlers stay in `organization` until a second module exists, then are extracted once into a
   shared web component (`web-shared`), never copied. The shared generic advice will be unscoped.

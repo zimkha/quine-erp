@@ -91,7 +91,7 @@ class ActivateOrganizationEndToEndIT {
 
   /**
    * Register, activate, then add a store, all over the real handlers and
-   * Postgres: add store answers its "must be active" 409 before activation
+   * Postgres: add store answers 409 ORGANIZATION_PENDING_VALIDATION before activation
    * and succeeds after it.
    */
   @Test
@@ -104,7 +104,7 @@ class ActivateOrganizationEndToEndIT {
     addStore(organizationId)
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code")
-            .value("ORGANIZATION_MUST_BE_ACTIVE_TO_ADD_STORE"));
+            .value("ORGANIZATION_PENDING_VALIDATION"));
     assertThat(statusOf(organizationId)).isEqualTo("PENDING_ACTIVATION");
 
     activateOrganization(organizationId)

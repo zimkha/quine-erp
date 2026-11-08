@@ -208,9 +208,7 @@ class OrganizationTest {
               (BusinessRuleViolationException) throwable;
 
           assertThat(exception.code())
-              .isEqualTo(
-                  "ORGANIZATION_MUST_BE_ACTIVE_TO_ADD_STORE"
-              );
+              .isEqualTo("ORGANIZATION_PENDING_VALIDATION");
         });
 
     assertThat(organization.stores()).hasSize(1);
@@ -476,9 +474,7 @@ class OrganizationTest {
               (BusinessRuleViolationException) throwable;
 
           assertThat(exception.code())
-              .isEqualTo(
-                  "ORGANIZATION_MUST_BE_ACTIVE_TO_DEACTIVATE_STORE"
-              );
+              .isEqualTo("ORGANIZATION_PENDING_VALIDATION");
         });
 
     assertThat(organization.domainEvents()).isEmpty();
@@ -563,28 +559,19 @@ class OrganizationTest {
         .isEqualTo(closedAt);
   }
 
+  /** T9g, PO-1: closing from SUSPENDED is refused. */
   @Test
-  void shouldCloseSuspendedOrganization() {
-    Organization organization = activeOrganization();
+  void shouldRejectClosingSuspendedOrganization() {
+    Organization organization = suspendedOrganization();
 
-    organization.suspend(
-        UUID.randomUUID(),
-        Instant.parse("2026-08-03T09:00:00Z")
+    assertTenantActionRefused(
+        organization,
+        () -> organization.close(
+            UUID.randomUUID(),
+            Instant.parse("2026-08-03T10:00:00Z")
+        ),
+        "ORGANIZATION_SUSPENDED"
     );
-
-    organization.clearDomainEvents();
-
-    organization.close(
-        UUID.randomUUID(),
-        Instant.parse("2026-08-03T10:00:00Z")
-    );
-
-    assertThat(organization.status())
-        .isEqualTo(OrganizationStatus.CLOSED);
-
-    assertThat(organization.domainEvents())
-        .singleElement()
-        .isInstanceOf(OrganizationClosed.class);
   }
 
   @Test
@@ -602,10 +589,10 @@ class OrganizationTest {
               (BusinessRuleViolationException) throwable;
 
           assertThat(exception.code())
-              .isEqualTo("ORGANIZATION_CANNOT_BE_CLOSED");
+              .isEqualTo("ORGANIZATION_PENDING_VALIDATION");
 
           assertThat(exception.ruleName())
-              .isEqualTo("OrganizationMustBeClosableRule");
+              .isEqualTo("OrganizationMustAcceptTenantActionsRule");
         });
 
     assertThat(organization.status())
@@ -1172,13 +1159,219 @@ class OrganizationTest {
     assertThat(organization.status())
         .isEqualTo(OrganizationStatus.SUSPENDED);
 
-    organization.close(
+    // T9g, PO-1: a suspended organization cannot be closed; it must be
+    // reinstated first.
+    assertThatThrownBy(() -> organization.close(
         UUID.randomUUID(),
         Instant.parse("2026-08-04T13:00:00Z")
+    ))
+        .isInstanceOf(BusinessRuleViolationException.class);
+
+    organization.reinstate(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-04T13:30:00Z")
+    );
+
+    organization.close(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-04T14:00:00Z")
     );
 
     assertThat(organization.status())
         .isEqualTo(OrganizationStatus.CLOSED);
+  }
+
+  // --- T9g: dedicated refusal codes (PENDING_ACTIVATION, SUSPENDED, CLOSED) --
+
+  @Test
+  void shouldRefuseAddStoreWhenPendingWithPendingValidation() {
+    Organization organization = newOrganization();
+    organization.clearDomainEvents();
+
+    assertTenantActionRefused(organization, () -> addSecondStore(organization),
+        "ORGANIZATION_PENDING_VALIDATION");
+  }
+
+  @Test
+  void shouldRefuseAddStoreWhenSuspendedWithOrganizationSuspended() {
+    Organization organization = suspendedOrganization();
+
+    assertTenantActionRefused(organization, () -> addSecondStore(organization),
+        "ORGANIZATION_SUSPENDED");
+  }
+
+  @Test
+  void shouldKeepGenericAddStoreCodeWhenClosed() {
+    Organization organization = closedOrganization();
+
+    assertTenantActionRefused(organization, () -> addSecondStore(organization),
+        "ORGANIZATION_MUST_BE_ACTIVE_TO_ADD_STORE");
+  }
+
+  @Test
+  void shouldRefuseChangeHeadquartersWhenPendingWithPendingValidation() {
+    Organization organization = newOrganization();
+    organization.clearDomainEvents();
+
+    assertTenantActionRefused(
+        organization,
+        () -> organization.changeHeadquarters(
+            new StoreId(UUID.randomUUID()),
+            UUID.randomUUID(),
+            Instant.parse("2026-08-04T10:00:00Z")
+        ),
+        "ORGANIZATION_PENDING_VALIDATION"
+    );
+  }
+
+  @Test
+  void shouldRefuseChangeHeadquartersWhenSuspendedWithOrganizationSuspended() {
+    Organization organization = suspendedOrganization();
+
+    assertTenantActionRefused(
+        organization,
+        () -> organization.changeHeadquarters(
+            new StoreId(UUID.randomUUID()),
+            UUID.randomUUID(),
+            Instant.parse("2026-08-04T10:00:00Z")
+        ),
+        "ORGANIZATION_SUSPENDED"
+    );
+  }
+
+  @Test
+  void shouldKeepGenericChangeHeadquartersCodeWhenClosed() {
+    Organization organization = closedOrganization();
+
+    assertTenantActionRefused(
+        organization,
+        () -> organization.changeHeadquarters(
+            new StoreId(UUID.randomUUID()),
+            UUID.randomUUID(),
+            Instant.parse("2026-08-04T10:00:00Z")
+        ),
+        "ORGANIZATION_MUST_BE_ACTIVE_TO_CHANGE_HEADQUARTERS"
+    );
+  }
+
+  @Test
+  void shouldRefuseDeactivateStoreWhenPendingWithPendingValidation() {
+    Organization organization = newOrganization();
+    organization.clearDomainEvents();
+
+    assertTenantActionRefused(
+        organization,
+        () -> organization.deactivateStore(
+            new StoreId(UUID.randomUUID()),
+            UUID.randomUUID(),
+            Instant.parse("2026-08-04T10:00:00Z")
+        ),
+        "ORGANIZATION_PENDING_VALIDATION"
+    );
+  }
+
+  @Test
+  void shouldRefuseDeactivateStoreWhenSuspendedWithOrganizationSuspended() {
+    Organization organization = suspendedOrganization();
+
+    assertTenantActionRefused(
+        organization,
+        () -> organization.deactivateStore(
+            new StoreId(UUID.randomUUID()),
+            UUID.randomUUID(),
+            Instant.parse("2026-08-04T10:00:00Z")
+        ),
+        "ORGANIZATION_SUSPENDED"
+    );
+  }
+
+  @Test
+  void shouldKeepGenericDeactivateStoreCodeWhenClosed() {
+    Organization organization = closedOrganization();
+
+    assertTenantActionRefused(
+        organization,
+        () -> organization.deactivateStore(
+            new StoreId(UUID.randomUUID()),
+            UUID.randomUUID(),
+            Instant.parse("2026-08-04T10:00:00Z")
+        ),
+        "ORGANIZATION_MUST_BE_ACTIVE_TO_DEACTIVATE_STORE"
+    );
+  }
+
+  @Test
+  void shouldRefuseCloseWhenPendingWithPendingValidation() {
+    Organization organization = newOrganization();
+    organization.clearDomainEvents();
+
+    assertTenantActionRefused(
+        organization,
+        () -> organization.close(
+            UUID.randomUUID(),
+            Instant.parse("2026-08-04T10:00:00Z")
+        ),
+        "ORGANIZATION_PENDING_VALIDATION"
+    );
+  }
+
+  @Test
+  void shouldKeepAlreadyClosedCodeWhenClosingClosedOrganization() {
+    Organization organization = closedOrganization();
+
+    assertTenantActionRefused(
+        organization,
+        () -> organization.close(
+            UUID.randomUUID(),
+            Instant.parse("2026-08-04T10:00:00Z")
+        ),
+        "ORGANIZATION_ALREADY_CLOSED"
+    );
+  }
+
+  /**
+   * The dedicated guard comes first and the platform actions do not use
+   * it: a suspended organization can still be reinstated.
+   */
+  @Test
+  void shouldNotApplyTenantGuardToPlatformActions() {
+    Organization organization = suspendedOrganization();
+
+    organization.reinstate(
+        UUID.randomUUID(),
+        Instant.parse("2026-08-04T10:00:00Z")
+    );
+
+    assertThat(organization.status()).isEqualTo(OrganizationStatus.ACTIVE);
+  }
+
+  private static void addSecondStore(Organization organization) {
+    organization.addStore(
+        new StoreId(UUID.randomUUID()),
+        new StoreCode("DAKAR-01"),
+        new StoreName("Magasin Dakar"),
+        UUID.randomUUID(),
+        Instant.parse("2026-08-04T10:00:00Z")
+    );
+  }
+
+  private static void assertTenantActionRefused(
+      Organization organization,
+      org.junit.jupiter.api.function.Executable action,
+      String expectedCode
+  ) {
+    OrganizationStatus statusBefore = organization.status();
+    int storesBefore = organization.stores().size();
+
+    assertThatThrownBy(action::execute)
+        .isInstanceOf(BusinessRuleViolationException.class)
+        .satisfies(throwable -> assertThat(
+            ((BusinessRuleViolationException) throwable).code()
+        ).isEqualTo(expectedCode));
+
+    assertThat(organization.status()).isEqualTo(statusBefore);
+    assertThat(organization.stores()).hasSize(storesBefore);
+    assertThat(organization.domainEvents()).isEmpty();
   }
 
   private static void assertReinstateRejected(

@@ -551,7 +551,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
-                  "pm.test(\"code is ORGANIZATION_MUST_BE_ACTIVE_TO_ADD_STORE\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_MUST_BE_ACTIVE_TO_ADD_STORE\"));",
+                  "pm.test(\"code is ORGANIZATION_PENDING_VALIDATION\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_PENDING_VALIDATION\"));",
                   "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
                 ]
               }
@@ -1606,7 +1606,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
-                  "pm.test(\"code is ORGANIZATION_CANNOT_BE_CLOSED\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_CANNOT_BE_CLOSED\"));",
+                  "pm.test(\"code is ORGANIZATION_PENDING_VALIDATION\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_PENDING_VALIDATION\"));",
                   "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
                 ]
               }

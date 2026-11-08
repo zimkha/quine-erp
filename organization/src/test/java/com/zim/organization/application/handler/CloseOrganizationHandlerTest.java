@@ -104,34 +104,36 @@ class CloseOrganizationHandlerTest {
         .isEmpty();
   }
 
+  /** T9g, PO-1: closing from SUSPENDED went from 200 to 409. */
   @Test
-  void shouldCloseSuspendedOrganization() {
+  void shouldRejectClosingSuspendedOrganization() {
     Organization organization = suspendedOrganization();
 
     repository.add(organization);
 
-    CloseOrganizationResult result = handler.handle(
+    assertThatThrownBy(() -> handler.handle(
         new CloseOrganizationCommand(new TenantId(TENANT_UUID), ORGANIZATION_UUID)
-    );
+    ))
+        .isInstanceOf(BusinessRuleViolationException.class)
+        .satisfies(throwable -> {
+          BusinessRuleViolationException exception =
+              (BusinessRuleViolationException) throwable;
 
-    assertThat(result.organizationId())
-        .isEqualTo(ORGANIZATION_UUID);
+          assertThat(exception.code())
+              .isEqualTo("ORGANIZATION_SUSPENDED");
 
-    assertThat(result.status())
-        .isEqualTo(OrganizationStatus.CLOSED.name());
+          assertThat(exception.ruleName())
+              .isEqualTo("OrganizationMustAcceptTenantActionsRule");
+        });
 
-    assertThat(result.closedAt())
-        .isEqualTo(CLOSED_AT);
+    assertThat(organization.status())
+        .isEqualTo(OrganizationStatus.SUSPENDED);
 
-    Organization savedOrganization = repository
-        .findById(
-            new TenantId(TENANT_UUID),
-            new OrganizationId(ORGANIZATION_UUID)
-        )
-        .orElseThrow();
+    assertThat(organization.domainEvents())
+        .isEmpty();
 
-    assertThat(savedOrganization.status())
-        .isEqualTo(OrganizationStatus.CLOSED);
+    assertThat(publisher.publishedEvents())
+        .isEmpty();
   }
 
   @Test
@@ -207,10 +209,10 @@ class CloseOrganizationHandlerTest {
               (BusinessRuleViolationException) throwable;
 
           assertThat(exception.code())
-              .isEqualTo("ORGANIZATION_CANNOT_BE_CLOSED");
+              .isEqualTo("ORGANIZATION_PENDING_VALIDATION");
 
           assertThat(exception.ruleName())
-              .isEqualTo("OrganizationMustBeClosableRule");
+              .isEqualTo("OrganizationMustAcceptTenantActionsRule");
         });
 
     assertThat(organization.status())
