@@ -7,6 +7,7 @@ import com.zim.organization.application.handler.CloseOrganizationHandler;
 import com.zim.organization.application.handler.RegisterOrganizationHandler;
 import com.zim.organization.application.result.RegisterOrganizationResult;
 import com.zim.organization.infrastructure.configuration.OrganizationConfiguration;
+import com.zim.organization.testing.TestOwnerRegistrar;
 import com.zim.organization.infrastructure.persistence.support.PostgresIntegrationTest;
 import com.zim.organization.presentation.rest.exception.ApiExceptionHandler;
 import com.zim.shared.domain.TenantId;
@@ -49,7 +50,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     OrganizationConfiguration.class,
     TenantOrganizationController.class,
     ApiExceptionHandler.class,
-    SettableTenantProvider.ProviderConfiguration.class
+    SettableTenantProvider.ProviderConfiguration.class,
+    TestOwnerRegistrar.Configuration.class
 })
 class ActivateOrganizationEndToEndIT {
 
@@ -91,7 +93,7 @@ class ActivateOrganizationEndToEndIT {
 
   /**
    * Register, activate, then add a store, all over the real handlers and
-   * Postgres: add store answers its "must be active" 409 before activation
+   * Postgres: add store answers 409 ORGANIZATION_PENDING_VALIDATION before activation
    * and succeeds after it.
    */
   @Test
@@ -104,7 +106,7 @@ class ActivateOrganizationEndToEndIT {
     addStore(organizationId)
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code")
-            .value("ORGANIZATION_MUST_BE_ACTIVE_TO_ADD_STORE"));
+            .value("ORGANIZATION_PENDING_VALIDATION"));
     assertThat(statusOf(organizationId)).isEqualTo("PENDING_ACTIVATION");
 
     activateOrganization(organizationId)
@@ -212,7 +214,10 @@ class ActivateOrganizationEndToEndIT {
             "Quincaillerie Thiès " + UUID.randomUUID(),
             "XOF",
             "THIES-01",
-            "Magasin principal"
+            "Magasin principal",
+            "owner@example.com",
+            // Fictitious test value of the required length.
+            "not-a-real-password-1"
         )
     );
   }

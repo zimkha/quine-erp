@@ -64,7 +64,9 @@ bounded context: `shared`, `organization`, `identity`, `customer`, `supplier`, `
   same test layering).
 - **`identity`** is implemented as far as T7a: the `User` aggregate (e-mail, BCrypt password hash, one owner
   per tenant), `CreateOwnerHandler` and its own `identity` schema. Login, tokens and the security filter
-  are T7b (deferred); registration creating the owner is T7c. See `docs/tickets/identity-T7.md`.
+  are T7b (deferred). Registration creates the owner (T7c): `POST /api/organizations` takes `ownerEmail` and
+  `ownerPassword`, and `OwnerRegistrar` (an `organization` port) is implemented in `bootstrap` over `CreateOwnerHandler`,
+  in the registration transaction (all or nothing); the owner cannot log in until T7b. See `docs/tickets/identity-T7.md`.
 - The other business modules (`customer`, `supplier`, `catalog`, `inventory`,
   `purchasing`, `sales`, `cash`, `notification`, `reporting`) are scaffolded (POM only, single
   placeholder `Main.java`) and not yet implemented.
@@ -147,6 +149,8 @@ explains why. Full list and rationale: `docs/tickets/cross-module-conventions-T6
   `ORGANIZATION_ALREADY_CLOSED`, `STORE_ALREADY_INACTIVE`, `STORE_IS_ALREADY_HEADQUARTERS`): target state
   reached. `..._ALREADY_EXISTS` is a real duplicate conflict. `..._CANNOT_BE_...` means refused from the
   current status. No endpoint is a silent no-op.
+- Family `ORGANIZATION_<STATE>` (`ORGANIZATION_PENDING_VALIDATION`, `ORGANIZATION_SUSPENDED`): a tenant action
+  refused because of the current state, never "target reached" (not in the "already" list). Closure only from `ACTIVE`.
 - Scope each module's `@RestControllerAdvice` with `basePackageClasses`. `ApiErrorResponse` and the
   generic handlers stay in `organization` until a second module exists, then are extracted once into a
   shared web component (`web-shared`), never copied. The shared generic advice will be unscoped.

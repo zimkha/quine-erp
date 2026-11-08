@@ -11,7 +11,7 @@
 
 1. **T5a–T5d can't succeed end to end through the API until something can activate an organization.**
    - Registration creates organizations in `PENDING_ACTIVATION`.
-   - Add store, change headquarters and deactivate store all require `ACTIVE`. Close requires `ACTIVE` or `SUSPENDED`.
+   - Add store, change headquarters and deactivate store all require `ACTIVE`. Close requires `ACTIVE` (it also accepted `SUSPENDED` until T9 / PO round 3, PO-1).
    - Until T5e is merged, every T5a–d call on an organization created over HTTP returns 409.
    - The tickets could be built and tested meanwhile, with tests seeding an `ACTIVE` organization through the handlers. T5e (decision 2 resolved 2026-10-01: the tenant activates) makes them usable end to end.
 2. **Until identity exists, the endpoints always return 401.**
@@ -89,6 +89,7 @@
 **Conventions:**
 - **Error `message` is developer-facing English (T5f, PO 2026-09-28):** clients must branch only on `code`, never parse `message`. The server never localizes errors and ignores `Accept-Language` for them. Localized end-user text is the client's job, mapping `code`.
 - **Repeated actions:** a repeat returns its 409 "already" code. Clients treat `STORE_IS_ALREADY_HEADQUARTERS`, `STORE_ALREADY_INACTIVE`, `ORGANIZATION_ALREADY_CLOSED` and `ORGANIZATION_ALREADY_ACTIVE` as "target state already reached". `…_CANNOT_BE_…` codes (e.g. `ORGANIZATION_CANNOT_BE_CLOSED`, `ORGANIZATION_CANNOT_BE_ACTIVATED`) mean the action is refused from the current status, and must not be treated as success. No T5 endpoint is a silent no-op.
+- **Family `ORGANIZATION_<STATE>` (T9g, `platform-admin-T9.md`):** `ORGANIZATION_PENDING_VALIDATION` and `ORGANIZATION_SUSPENDED` (and `ORGANIZATION_REJECTED` from T9e) are refusals tied to the organization's **current state**, never "target state already reached". They are not in the "already" list above and must not be treated as success. `PENDING_VALIDATION` is a business name for the `PENDING_ACTIVATION` status. A shared guard (`OrganizationMustAcceptTenantActionsRule`) is evaluated first by add store, change headquarters, deactivate store and close. For `CLOSED` the generic codes below are unchanged.
 - **No `tenantId` in responses:** no T5 response echoes it.
 - **Controllers:** tenant-scoped endpoints live in `TenantOrganizationController` (`presentation.rest`). `OrganizationController` keeps register only and doesn't inject `CurrentTenantProvider`.
 - **Out of scope:** mapping 405 and 415 into `ApiErrorResponse`.
@@ -121,7 +122,8 @@
 - **Success:** **201** with body `{organizationId, storeId, storeCode, storeName, headquarters, active, addedAt}`, mirroring `AddStoreResult`. `headquarters=false`, `active=true`. **No `Location` header**: it is added to register and add store together once a GET endpoint exists.
 - **Errors:** the shared table, plus these, in evaluation order:
   - 422 `INVALID_STORE_NAME`: passes the DTO but is too short once trimmed, e.g. `" a"`. The value objects are built **before** the rules run, so `" a"` sent to a non-active organization gives 422, not 409.
-  - 409 `ORGANIZATION_MUST_BE_ACTIVE_TO_ADD_STORE`: status is `PENDING_ACTIVATION`, `SUSPENDED` or `CLOSED`
+  - 409 `ORGANIZATION_PENDING_VALIDATION` (status `PENDING_ACTIVATION`) or `ORGANIZATION_SUSPENDED` (status `SUSPENDED`), evaluated first (T9g; was `ORGANIZATION_MUST_BE_ACTIVE_TO_ADD_STORE` for both)
+  - 409 `ORGANIZATION_MUST_BE_ACTIVE_TO_ADD_STORE`: status is `CLOSED`
   - 409 `STORE_CODE_ALREADY_EXISTS`: the code matches any existing store, active or inactive. The check is case-insensitive.
   - 409 `STORE_ID_ALREADY_EXISTS`: not triggerable by a client
   - `INVALID_STORE_CODE` can't be reached, because the DTO pattern equals the domain format.
@@ -143,7 +145,7 @@
   - `storeCode` of `"A"`, `"THIES 01"` or blank, or `storeName` of `"X"` or blank: 400 `VALIDATION_FAILED` with the message starting `"<field>: "`. The handler is never called.
   - A malformed path id, malformed JSON or a missing body: 400 `VALIDATION_FAILED`.
 - **Business rules:**
-  - Organization `PENDING_ACTIVATION`, `SUSPENDED` or `CLOSED`: 409 `ORGANIZATION_MUST_BE_ACTIVE_TO_ADD_STORE`.
+  - Organization `PENDING_ACTIVATION`: 409 `ORGANIZATION_PENDING_VALIDATION`; `SUSPENDED`: 409 `ORGANIZATION_SUSPENDED` (T9g); `CLOSED`: 409 `ORGANIZATION_MUST_BE_ACTIVE_TO_ADD_STORE`.
   - `"thies-01"` when `THIES-01` exists, active or inactive: 409 `STORE_CODE_ALREADY_EXISTS`.
 - **Domain value error:** `storeName=" a"` gives 422 `INVALID_STORE_NAME`, including on a `PENDING_ACTIVATION` organization (422 before 409).
 - **Register also gets the new 400s:** register with malformed JSON returns 400 `VALIDATION_FAILED` in the `ApiErrorResponse` shape.
@@ -197,7 +199,8 @@
 - **Success:** **200** with `{organizationId, headquartersId, changedAt}`, mirroring `ChangeHeadquartersResult`. There is no `previousHeadquartersId`.
 - **Verb:** `PUT` is kept, because its effect on the server is idempotent. A repeat gives 409 `STORE_IS_ALREADY_HEADQUARTERS`, which clients treat as success.
 - **Errors:** the shared table, plus these, in domain order:
-  - 409 `ORGANIZATION_MUST_BE_ACTIVE_TO_CHANGE_HEADQUARTERS`
+  - 409 `ORGANIZATION_PENDING_VALIDATION` / `ORGANIZATION_SUSPENDED`, evaluated first (T9g)
+  - 409 `ORGANIZATION_MUST_BE_ACTIVE_TO_CHANGE_HEADQUARTERS` (`CLOSED`)
   - 409 `STORE_DOES_NOT_BELONG_TO_ORGANIZATION`
   - 409 `STORE_IS_ALREADY_HEADQUARTERS`
   - 409 `INACTIVE_STORE_CANNOT_BECOME_HEADQUARTERS`
@@ -215,7 +218,7 @@
 - **Missing organization:** 404.
 - **Validation:** a missing, null or non-UUID `storeId`, or a malformed path id, gives 400, and the handler is never called.
 - **Business rules:**
-  - Organization not `ACTIVE`: 409 `ORGANIZATION_MUST_BE_ACTIVE_TO_CHANGE_HEADQUARTERS`.
+  - Organization `PENDING_ACTIVATION`: 409 `ORGANIZATION_PENDING_VALIDATION`; `SUSPENDED`: 409 `ORGANIZATION_SUSPENDED` (T9g); `CLOSED`: 409 `ORGANIZATION_MUST_BE_ACTIVE_TO_CHANGE_HEADQUARTERS`.
   - A random store id, or another tenant's store: 409 `STORE_DOES_NOT_BELONG_TO_ORGANIZATION`. Both give the same response, so nothing leaks. The same-tenant, other-organization case can't be tested while `uk_organizations_tenant_id` allows one organization per tenant (decision 1).
   - The current headquarters: 409 `STORE_IS_ALREADY_HEADQUARTERS`.
   - An inactive store: 409 `INACTIVE_STORE_CANNOT_BECOME_HEADQUARTERS`.
@@ -253,7 +256,8 @@
 **Contract**
 - **Success:** **200** with `{organizationId, storeId, active:false, deactivatedAt}`, mirroring `DeactivateStoreResult`.
 - **Errors:** the shared table, plus these, in domain order:
-  - 409 `ORGANIZATION_MUST_BE_ACTIVE_TO_DEACTIVATE_STORE`
+  - 409 `ORGANIZATION_PENDING_VALIDATION` / `ORGANIZATION_SUSPENDED`, evaluated first (T9g)
+  - 409 `ORGANIZATION_MUST_BE_ACTIVE_TO_DEACTIVATE_STORE` (`CLOSED`)
   - 409 `STORE_DOES_NOT_BELONG_TO_ORGANIZATION`
   - 409 `HEADQUARTERS_CANNOT_BE_DEACTIVATED`
   - 409 `STORE_ALREADY_INACTIVE`
@@ -269,7 +273,7 @@
 - **Missing organization:** 404.
 - **Validation:** a malformed `{id}` or `{storeId}` gives 400. Use explicit `@PathVariable("storeId")`, so the message names the parameter.
 - **Business rules:**
-  - Organization not `ACTIVE`: 409 `ORGANIZATION_MUST_BE_ACTIVE_TO_DEACTIVATE_STORE`.
+  - Organization `PENDING_ACTIVATION`: 409 `ORGANIZATION_PENDING_VALIDATION`; `SUSPENDED`: 409 `ORGANIZATION_SUSPENDED` (T9g); `CLOSED`: 409 `ORGANIZATION_MUST_BE_ACTIVE_TO_DEACTIVATE_STORE`.
   - Unknown store: 409 `STORE_DOES_NOT_BELONG_TO_ORGANIZATION`.
   - The headquarters: 409 `HEADQUARTERS_CANNOT_BE_DEACTIVATED`.
   - A repeat: 409 `STORE_ALREADY_INACTIVE`.
@@ -310,22 +314,23 @@
 - **Success:** **200** with `{organizationId, status:"CLOSED", closedAt}`. There is no `tenantId` (decision 11a), and `CloseOrganizationResult` is unchanged.
 - **Errors:** the shared table, plus these:
   - 409 `ORGANIZATION_ALREADY_CLOSED`: status is `CLOSED`
-  - 409 `ORGANIZATION_CANNOT_BE_CLOSED`: status is `PENDING_ACTIVATION`
+  - 409 `ORGANIZATION_PENDING_VALIDATION`: status is `PENDING_ACTIVATION` (T9g; was `ORGANIZATION_CANNOT_BE_CLOSED`)
+  - 409 `ORGANIZATION_SUSPENDED`: status is `SUSPENDED` (T9g, PO-1)
 
-  Closing is allowed only from `ACTIVE` or `SUSPENDED`.
+  Closing is allowed only from `ACTIVE`. ~~Closing is allowed from `ACTIVE` or `SUSPENDED`.~~ **Superseded by T9 / product-owner round 3 (PO-1, 2026-11-08):** a suspended tenant can do nothing, so closing from `SUSPENDED` goes from 200 to 409 `ORGANIZATION_SUSPENDED`. `ORGANIZATION_CANNOT_BE_CLOSED` stays in the closable rule as a safety net but is no longer reachable from the tenant endpoint.
 
 **Acceptance criteria**
-- **Happy path:** Given A's `ACTIVE` organization (and separately a `SUSPENDED` one, seeded through the aggregate because there is no suspend handler), then closing returns 200 with `status=CLOSED`.
+- **Happy path:** Given A's `ACTIVE` organization then closing returns 200 with `status=CLOSED`. A `SUSPENDED` one (seeded through the aggregate) is refused with 409 `ORGANIZATION_SUSPENDED` (T9g, PO-1; it used to return 200).
 - **Tenant only from the provider; no tenant:** as in the shared contract.
 - **Other tenant:** Given B sends A's organization id, in any status of A including `CLOSED`, then the response is 404, identical to the missing-organization 404. It is never `ORGANIZATION_ALREADY_CLOSED`, and A is unchanged.
 - **Validation:** a malformed `{id}` gives 400.
 - **Business rules:**
   - A repeat: 409 `ORGANIZATION_ALREADY_CLOSED`.
-  - `PENDING_ACTIVATION`: 409 `ORGANIZATION_CANNOT_BE_CLOSED`.
+  - `PENDING_ACTIVATION`: 409 `ORGANIZATION_PENDING_VALIDATION`; `SUSPENDED`: 409 `ORGANIZATION_SUSPENDED` (T9g).
 - **Concurrency:** 409 `CONCURRENT_MODIFICATION`.
 
 **Business rules**
-- Only an `ACTIVE` or `SUSPENDED` organization can be closed.
+- Only an `ACTIVE` organization can be closed (T9g, PO-1; `SUSPENDED` was closable before).
 - Closing is irreversible.
 - A closed organization accepts no further changes.
 

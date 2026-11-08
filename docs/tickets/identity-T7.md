@@ -1,6 +1,6 @@
 # T7: Identity: authenticated users and the real current tenant
 
-- **Status:** drafted by the BA against `main` at `a708069` (2026-10-02). Product owner answered questions 1–5 on 2026-10-02. **Architect: validated with changes (2026-10-02, checked against `a708069`).** The changes are applied below. **Sequencing: hybrid (decided 2026-10-02 on the BA's recommendation): T7a and T7c now; T7b and T8 later, but before any real (non-local) deployment.** Small product-owner confirmations remain, listed at the end.
+- **Status:** drafted by the BA against `main` at `a708069` (2026-10-02). Product owner answered questions 1–5 on 2026-10-02. **Architect: validated with changes (2026-10-02, checked against `a708069`).** The changes are applied below. **Sequencing: hybrid (decided 2026-10-02 on the BA's recommendation): T7a and T7c now; T7b and T8 later, but before any real (non-local) deployment.** Small product-owner confirmations remain, listed at the end. **Implementation status: T7a implemented; T7c implemented (registration creates the owner in the same transaction; the Postman collection is updated; the owner cannot log in until T7b); T7b not started.**
 - **Workflow:** BA → Architect → Developer → Lead Developer (see `CLAUDE.md`).
 - **Sources:** the "T7" follow-ups in `tenant-scoping-T1-T4.md`, `endpoints-T5.md` and `cross-module-conventions-T6.md`.
 
@@ -136,6 +136,7 @@ The criteria about tokens, 401, 400 order, login and the removed stand-ins apply
 - No token revocation or refresh: a stolen token works until it expires.
 - No rate limiting or lockout on login (brute force).
 - A single symmetric signing key for all tokens.
+- **E-mail enumeration through public registration (known since T7c):** the uniqueness is platform-wide, so `POST /api/organizations` answers 409 `EMAIL_ALREADY_EXISTS` for an e-mail that already has an account. This follows the "E-mail rules" criterion. Rate limiting, or a neutral answer, is a later ticket.
 
 ## Dependencies
 

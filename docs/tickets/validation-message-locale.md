@@ -28,9 +28,10 @@
 | `@NotNull` | `must not be null` |
 | `@Size` | `size must be between {min} and {max}` |
 | `@Pattern` | `must match the required format` |
+| `@Email` (T7c, `ownerEmail`) | `must be a valid e-mail address` |
 | Anything else, or a `FieldError` without a `ConstraintViolation` (e.g. binding `typeMismatch`) | `is invalid` |
 
-`@NotBlank`, `@NotNull` and `@Size` are identical to today's English output. Only `@Pattern` changes.
+`@NotBlank`, `@NotNull` and `@Size` are identical to today's English output. Only `@Pattern` changes. `@Email` was added by T7c (see `identity-T7.md`, decision 12); the submitted e-mail and the password are never quoted. `ownerEmail` also carries `@Size(max=254)`, which renders the existing `@Size` text with the default minimum: `ownerEmail: size must be between 0 and 254` (254 matches identity's `Email.MAX_LENGTH`).
 
 **Exact messages:**
 

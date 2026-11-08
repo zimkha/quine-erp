@@ -39,7 +39,9 @@ public class OrganizationController {
                         request.legalName(),
                         request.currencyCode(),
                         request.headquartersCode(),
-                        request.headquartersName()
+                        request.headquartersName(),
+                        request.ownerEmail(),
+                        request.ownerPassword()
                 );
 
         RegisterOrganizationResult result =

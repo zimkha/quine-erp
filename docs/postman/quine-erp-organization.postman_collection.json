@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "606c13be-547c-4acd-b383-a9c2d7db439d",
     "name": "quine-erp — Organization API",
-    "description": "Test data and assertions for every organization endpoint (register, T5a–T5e).\n\n**Run the whole collection in order** (Collection Runner or newman). Each request stores the ids that later requests need.\n\n**Tenant:** the real application has no tenant source yet: identity (T7) is not built and `bootstrap` is not runnable. So the tenant-scoped endpoints need the smoke runner, which reads the tenant from the `X-Smoke-Tenant` header. The production code never reads a tenant from a header. Without the runner, every tenant endpoint answers 401 `TENANT_NOT_RESOLVED`.\n\n**Activation:** `/smoke/organizations/{id}/activate` belongs to the runner only. Setup still uses it to keep organization A independent of the real endpoint. The real activate endpoint (T5e) is tested in folder 6.\n\nClients must branch on `code` only. `message` is developer-facing English (T5f).",
+    "description": "Test data and assertions for every organization endpoint (register, T5a–T5e).\n\n**Run the whole collection in order** (Collection Runner or newman). Each request stores the ids that later requests need.\n\n**Owner (T7c):** registering also creates the tenant's owner from `ownerEmail` and `ownerPassword`. The collection generates throwaway demo values at the start of each run (collection variables `ownerPassword`, `ownerEmailA`, ...), so no password is stored in this file. After T7c the owner exists with a hashed password but cannot log in yet: login is T7b.\n\n**Tenant:** the real application has no tenant source yet: identity (T7) is not built and `bootstrap` is not runnable. So the tenant-scoped endpoints need the smoke runner, which reads the tenant from the `X-Smoke-Tenant` header. The production code never reads a tenant from a header. Without the runner, every tenant endpoint answers 401 `TENANT_NOT_RESOLVED`.\n\n**Activation:** `/smoke/organizations/{id}/activate` belongs to the runner only. Setup still uses it to keep organization A independent of the real endpoint. The real activate endpoint (T5e) is tested in folder 6.\n\nClients must branch on `code` only. `message` is developer-facing English (T5f).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -18,7 +18,12 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.collectionVariables.set(\"runSuffix\", Date.now().toString());"
+                  "pm.collectionVariables.set(\"runSuffix\", Date.now().toString());",
+                  "// Throwaway demo credentials, generated per run: nothing secret is stored in this file.",
+                  "pm.collectionVariables.set(\"ownerPassword\", \"demo-\" + CryptoJS.lib.WordArray.random(12).toString());",
+                  "pm.collectionVariables.set(\"ownerEmailA\", \"owner-a-\" + Date.now() + \"@example.com\");",
+                  "pm.collectionVariables.set(\"ownerEmailB\", \"owner-b-\" + Date.now() + \"@example.com\");",
+                  "pm.collectionVariables.set(\"ownerEmailOther\", \"owner-x-\" + Date.now() + \"@example.com\");"
                 ]
               }
             },
@@ -31,7 +36,11 @@
                   "pm.collectionVariables.set(\"orgA\", pm.response.json().organizationId);",
                   "pm.collectionVariables.set(\"tenantA\", pm.response.json().tenantId);",
                   "pm.collectionVariables.set(\"hqA\", pm.response.json().headquartersId);",
-                  "pm.test(\"status is PENDING_ACTIVATION\", () => pm.expect(pm.response.json().status).to.eql(\"PENDING_ACTIVATION\"));"
+                  "pm.test(\"status is PENDING_ACTIVATION\", () => pm.expect(pm.response.json().status).to.eql(\"PENDING_ACTIVATION\"));",
+                  "pm.test(\"response has no password, hash or token\", () => {",
+                  "  const body = pm.response.text().toLowerCase();",
+                  "  ['password','hash','token','owner'].forEach(w => pm.expect(body).to.not.include(w));",
+                  "});"
                 ]
               }
             }
@@ -56,7 +65,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"organizationName\": \"Quincaillerie Thiès\",\n  \"legalName\": \"Quincaillerie Thiès SARL {{runSuffix}}\",\n  \"currencyCode\": \"XOF\",\n  \"headquartersCode\": \"THIES-01\",\n  \"headquartersName\": \"Siège Thiès\"\n}",
+              "raw": "{\n  \"organizationName\": \"Quincaillerie Thiès\",\n  \"legalName\": \"Quincaillerie Thiès SARL {{runSuffix}}\",\n  \"currencyCode\": \"XOF\",\n  \"headquartersCode\": \"THIES-01\",\n  \"headquartersName\": \"Siège Thiès\",\n  \"ownerEmail\": \"{{ownerEmailA}}\",\n  \"ownerPassword\": \"{{ownerPassword}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -101,7 +110,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"organizationName\": \"Quincaillerie Dakar\",\n  \"legalName\": \"Quincaillerie Dakar SARL {{runSuffix}}\",\n  \"currencyCode\": \"XOF\",\n  \"headquartersCode\": \"DAKAR-01\",\n  \"headquartersName\": \"Siège Dakar\"\n}",
+              "raw": "{\n  \"organizationName\": \"Quincaillerie Dakar\",\n  \"legalName\": \"Quincaillerie Dakar SARL {{runSuffix}}\",\n  \"currencyCode\": \"XOF\",\n  \"headquartersCode\": \"DAKAR-01\",\n  \"headquartersName\": \"Siège Dakar\",\n  \"ownerEmail\": \"{{ownerEmailB}}\",\n  \"ownerPassword\": \"{{ownerPassword}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -188,7 +197,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"organizationName\": \"Quincaillerie Thiès\",\n  \"legalName\": \"Quincaillerie Thiès SARL {{runSuffix}}\",\n  \"currencyCode\": \"XOF\",\n  \"headquartersCode\": \"THIES-01\",\n  \"headquartersName\": \"Siège Thiès\"\n}",
+              "raw": "{\n  \"organizationName\": \"Quincaillerie Thiès\",\n  \"legalName\": \"Quincaillerie Thiès SARL {{runSuffix}}\",\n  \"currencyCode\": \"XOF\",\n  \"headquartersCode\": \"THIES-01\",\n  \"headquartersName\": \"Siège Thiès\",\n  \"ownerEmail\": \"{{ownerEmailOther}}\",\n  \"ownerPassword\": \"{{ownerPassword}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -232,7 +241,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"organizationName\": \"Quincaillerie Kaolack\",\n  \"legalName\": \"Quincaillerie Kaolack SARL {{runSuffix}}\",\n  \"currencyCode\": \"GBP\",\n  \"headquartersCode\": \"KAO-01\",\n  \"headquartersName\": \"Siège Kaolack\"\n}",
+              "raw": "{\n  \"organizationName\": \"Quincaillerie Kaolack\",\n  \"legalName\": \"Quincaillerie Kaolack SARL {{runSuffix}}\",\n  \"currencyCode\": \"GBP\",\n  \"headquartersCode\": \"KAO-01\",\n  \"headquartersName\": \"Siège Kaolack\",\n  \"ownerEmail\": \"{{ownerEmailOther}}\",\n  \"ownerPassword\": \"{{ownerPassword}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -326,7 +335,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"organizationName\": \"\",\n  \"legalName\": \"\",\n  \"currencyCode\": \"XO\",\n  \"headquartersCode\": \"\",\n  \"headquartersName\": \"\"\n}",
+              "raw": "{\n  \"organizationName\": \"\",\n  \"legalName\": \"\",\n  \"currencyCode\": \"XO\",\n  \"headquartersCode\": \"\",\n  \"headquartersName\": \"\",\n  \"ownerEmail\": \"{{ownerEmailOther}}\",\n  \"ownerPassword\": \"{{ownerPassword}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -374,7 +383,147 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"organizationName\": \"Quincaillerie Mbour\",\n  \"legalName\": \"Quincaillerie Mbour SARL {{runSuffix}}\",\n  \"currencyCode\": \"XOF\",\n  \"headquartersCode\": \"MBOUR-01\",\n  \"headquartersName\": \"Siège Mbour\",\n  \"tenantId\": \"00000000-0000-0000-0000-000000000001\"\n}",
+              "raw": "{\n  \"organizationName\": \"Quincaillerie Mbour\",\n  \"legalName\": \"Quincaillerie Mbour SARL {{runSuffix}}\",\n  \"currencyCode\": \"XOF\",\n  \"headquartersCode\": \"MBOUR-01\",\n  \"headquartersName\": \"Siège Mbour\",\n  \"tenantId\": \"00000000-0000-0000-0000-000000000001\",\n  \"ownerEmail\": \"{{ownerEmailOther}}\",\n  \"ownerPassword\": \"{{ownerPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Owner e-mail already taken (any case) → 409",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"ownerEmailAUpper\", pm.collectionVariables.get(\"ownerEmailA\").toUpperCase());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"code is EMAIL_ALREADY_EXISTS\", () => pm.expect(pm.response.json().code).to.eql(\"EMAIL_ALREADY_EXISTS\"));",
+                  "pm.test(\"the password is not echoed\", () => pm.expect(pm.response.text()).to.not.include(pm.collectionVariables.get(\"ownerPassword\")));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"organizationName\": \"Quincaillerie Saint-Louis\",\n  \"legalName\": \"Quincaillerie Saint-Louis SARL {{runSuffix}}\",\n  \"currencyCode\": \"XOF\",\n  \"headquartersCode\": \"STL-01\",\n  \"headquartersName\": \"Siège Saint-Louis\",\n  \"ownerEmail\": \"{{ownerEmailAUpper}}\",\n  \"ownerPassword\": \"{{ownerPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Invalid owner e-mail and short password → 400 (pinned, no echo)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"pinned messages\", () => pm.expect(pm.response.json().message).to.eql(\"ownerEmail: must be a valid e-mail address; ownerPassword: size must be between 12 and 72\"));",
+                  "pm.test(\"values are not echoed\", () => { const t = pm.response.text(); pm.expect(t).to.not.include(\"tiny-pw\"); pm.expect(t).to.not.include(\"not-an-email\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"organizationName\": \"Quincaillerie Saint-Louis\",\n  \"legalName\": \"Quincaillerie Saint-Louis SARL {{runSuffix}}\",\n  \"currencyCode\": \"XOF\",\n  \"headquartersCode\": \"STL-01\",\n  \"headquartersName\": \"Siège Saint-Louis\",\n  \"ownerEmail\": \"not-an-email\",\n  \"ownerPassword\": \"tiny-pw\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Missing owner fields → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"pinned message\", () => pm.expect(pm.response.json().message).to.eql(\"ownerEmail: must not be blank; ownerPassword: must not be blank\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"organizationName\": \"Quincaillerie Saint-Louis\",\n  \"legalName\": \"Quincaillerie Saint-Louis SARL {{runSuffix}}\",\n  \"currencyCode\": \"XOF\",\n  \"headquartersCode\": \"STL-01\",\n  \"headquartersName\": \"Siège Saint-Louis\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -551,7 +700,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
-                  "pm.test(\"code is ORGANIZATION_MUST_BE_ACTIVE_TO_ADD_STORE\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_MUST_BE_ACTIVE_TO_ADD_STORE\"));",
+                  "pm.test(\"code is ORGANIZATION_PENDING_VALIDATION\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_PENDING_VALIDATION\"));",
                   "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
                 ]
               }
@@ -1606,7 +1755,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
-                  "pm.test(\"code is ORGANIZATION_CANNOT_BE_CLOSED\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_CANNOT_BE_CLOSED\"));",
+                  "pm.test(\"code is ORGANIZATION_PENDING_VALIDATION\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_PENDING_VALIDATION\"));",
                   "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));"
                 ]
               }
@@ -2162,6 +2311,26 @@
     },
     {
       "key": "store3",
+      "value": ""
+    },
+    {
+      "key": "ownerPassword",
+      "value": ""
+    },
+    {
+      "key": "ownerEmailA",
+      "value": ""
+    },
+    {
+      "key": "ownerEmailB",
+      "value": ""
+    },
+    {
+      "key": "ownerEmailOther",
+      "value": ""
+    },
+    {
+      "key": "ownerEmailAUpper",
       "value": ""
     }
   ]

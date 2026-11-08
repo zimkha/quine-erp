@@ -12,10 +12,7 @@ public record OrganizationMustBeClosableRule(
 ) implements BusinessRule {
 
     private static final Set<OrganizationStatus> CLOSABLE_STATUSES =
-            EnumSet.of(
-                    OrganizationStatus.ACTIVE,
-                    OrganizationStatus.SUSPENDED
-            );
+            EnumSet.of(OrganizationStatus.ACTIVE);
 
     public OrganizationMustBeClosableRule {
         Objects.requireNonNull(

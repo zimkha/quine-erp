@@ -96,8 +96,18 @@ class FieldErrorMessagesTest {
   }
 
   @Test
+  void shouldGivePinnedTextForEmailWhateverTheDefaultLocale() {
+    assertThat(textOf("email")).isEqualTo("must be a valid e-mail address");
+
+    Locale.setDefault(Locale.FRENCH);
+
+    assertThat(textOf("email")).isEqualTo("must be a valid e-mail address");
+  }
+
+  /** {@code @Max} has no pinned text (was {@code @Email} before T7c). */
+  @Test
   void shouldFallBackForConstraintWithoutPinnedText() {
-    assertThat(textOf("email")).isEqualTo("is invalid");
+    assertThat(textOf("other")).isEqualTo("is invalid");
   }
 
   /**
@@ -126,7 +136,7 @@ class FieldErrorMessagesTest {
 
   private static FieldError fieldError(String field) {
     Sample invalid =
-        new Sample(" ", null, "X", "XO", "a b", "not-an-email", "x");
+        new Sample(" ", null, "X", "XO", "a b", "not-an-email", "x", 5);
     BindingResult errors = new DirectFieldBindingResult(invalid, "sample");
     new SpringValidatorAdapter(validatorFactory.getValidator())
         .validate(invalid, errors);
@@ -143,7 +153,8 @@ class FieldErrorMessagesTest {
       @jakarta.validation.constraints.Size(min = 3, max = 3) String currency,
       @Pattern(regexp = "^[a-z]+$") String code,
       @Email String email,
-      @Size String custom
+      @Size String custom,
+      @jakarta.validation.constraints.Max(1) Integer other
   ) {
   }
 

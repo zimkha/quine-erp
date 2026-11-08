@@ -8,12 +8,17 @@ import com.zim.organization.domain.model.OrganizationStatus;
 import com.zim.organization.domain.valueobject.OrganizationId;
 import com.zim.organization.domain.valueobject.StoreId;
 import com.zim.shared.domain.TenantId;
+import com.zim.organization.domain.model.Organization;
+import com.zim.organization.domain.repository.OrganizationRepository;
 import com.zim.organization.testing.InMemoryDomainEventPublisher;
 import com.zim.organization.testing.InMemoryOrganizationRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,21 +45,59 @@ class RegisterOrganizationHandlerTest {
           "f84f8ce3-803f-45a5-a552-d7313f9f7cf8"
       );
 
+  private static final String OWNER_EMAIL = "owner@example.com";
+  // Fictitious test value of the required length.
+  private static final String OWNER_PASSWORD = "not-a-real-password-1";
+
   private InMemoryDomainEventPublisher publisher;
+  private List<String> calls;
+  private List<Object[]> ownerCalls;
+  private RuntimeException ownerFailure;
 
   @BeforeEach
   void setUp() {
+    calls = new ArrayList<>();
+    ownerCalls = new ArrayList<>();
+    ownerFailure = null;
     repository = new InMemoryOrganizationRepository();
     publisher = new InMemoryDomainEventPublisher();
 
     handler = new RegisterOrganizationHandler(
-        repository,
+        new OrganizationRepository() {
+          @Override
+          public void save(Organization organization) {
+            calls.add("save");
+            repository.save(organization);
+          }
+
+          @Override
+          public Optional<Organization> findById(
+              TenantId tenantId, OrganizationId organizationId
+          ) {
+            return repository.findById(tenantId, organizationId);
+          }
+
+          @Override
+          public boolean existsByLegalName(String normalizedLegalName) {
+            return repository.existsByLegalName(normalizedLegalName);
+          }
+        },
         () -> new OrganizationId(ORGANIZATION_UUID),
         () -> new TenantId(TENANT_UUID),
         () -> new StoreId(STORE_UUID),
         () -> EVENT_UUID,
         () -> FIXED_TIME,
-        publisher
+        events -> {
+          calls.add("publish");
+          publisher.publish(events);
+        },
+        (tenantId, email, password) -> {
+          calls.add("owner");
+          ownerCalls.add(new Object[] {tenantId, email, password});
+          if (ownerFailure != null) {
+            throw ownerFailure;
+          }
+        }
     );
   }
 
@@ -66,7 +109,9 @@ class RegisterOrganizationHandlerTest {
             "Quincaillerie Thiès SARL",
             "XOF",
             "THIES-01",
-            "Magasin principal"
+            "Magasin principal",
+            OWNER_EMAIL,
+            OWNER_PASSWORD
         );
 
     RegisterOrganizationResult result =
@@ -106,7 +151,9 @@ class RegisterOrganizationHandlerTest {
             "Quincaillerie Thiès SARL",
             "XOF",
             "THIES-01",
-            "Magasin principal"
+            "Magasin principal",
+            OWNER_EMAIL,
+            OWNER_PASSWORD
         );
 
     handler.handle(firstCommand);
@@ -117,7 +164,9 @@ class RegisterOrganizationHandlerTest {
             "  quincaillerie   thiès sarl ",
             "XOF",
             "DAKAR-01",
-            "Magasin Dakar"
+            "Magasin Dakar",
+            OWNER_EMAIL,
+            OWNER_PASSWORD
         );
 
     assertThatThrownBy(
@@ -139,7 +188,9 @@ class RegisterOrganizationHandlerTest {
             "Quincaillerie Thiès SARL",
             "XOF",
             "THIES-01",
-            "Magasin principal"
+            "Magasin principal",
+            OWNER_EMAIL,
+            OWNER_PASSWORD
         );
 
     handler.handle(command);
@@ -161,5 +212,70 @@ class RegisterOrganizationHandlerTest {
           assertThat(registered.organizationId().value())
               .isEqualTo(ORGANIZATION_UUID);
         });
+  }
+
+  @Test
+  void shouldRegisterOwnerBetweenSaveAndEvent() {
+    handler.handle(validCommand());
+
+    assertThat(calls).containsExactly("save", "owner", "publish");
+  }
+
+  @Test
+  void shouldPassTenantEmailAndPasswordToTheOwnerPort() {
+    handler.handle(validCommand());
+
+    assertThat(ownerCalls).singleElement().satisfies(call -> {
+      assertThat(call[0]).isEqualTo(new TenantId(TENANT_UUID));
+      assertThat(call[1]).isEqualTo(OWNER_EMAIL);
+      assertThat(call[2]).isEqualTo(OWNER_PASSWORD);
+    });
+  }
+
+  /**
+   * The exception reaches the caller unchanged (the transaction wrapper then
+   * rolls back the save) and no event announces a registration that failed.
+   */
+  @Test
+  void shouldPropagateOwnerFailureAndPublishNothing() {
+    ownerFailure = new IllegalStateException("owner refused");
+
+    assertThatThrownBy(() -> handler.handle(validCommand()))
+        .isSameAs(ownerFailure);
+
+    assertThat(publisher.publishedEvents()).isEmpty();
+    assertThat(calls).containsExactly("save", "owner");
+  }
+
+  @Test
+  void shouldNotCallOwnerPortWhenLegalNameAlreadyExists() {
+    handler.handle(validCommand());
+    ownerCalls.clear();
+
+    assertThatThrownBy(() -> handler.handle(validCommand()))
+        .isInstanceOf(OrganizationAlreadyExistsException.class);
+
+    assertThat(ownerCalls).isEmpty();
+  }
+
+  @Test
+  void shouldKeepOwnerDataOutOfTheRegisteredEvent() {
+    handler.handle(validCommand());
+
+    assertThat(publisher.publishedEvents().toString())
+        .doesNotContain(OWNER_EMAIL)
+        .doesNotContain(OWNER_PASSWORD);
+  }
+
+  private static RegisterOrganizationCommand validCommand() {
+    return new RegisterOrganizationCommand(
+        "Quincaillerie Thiès",
+        "Quincaillerie Thiès SARL",
+        "XOF",
+        "THIES-01",
+        "Magasin principal",
+        OWNER_EMAIL,
+        OWNER_PASSWORD
+    );
   }
 }

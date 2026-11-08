@@ -449,12 +449,14 @@ class TenantOrganizationControllerTest {
   // --- 409 -----------------------------------------------------------------
 
   @ParameterizedTest
-  @EnumSource(
-      value = OrganizationStatus.class,
-      names = {"PENDING_ACTIVATION", "SUSPENDED", "CLOSED"}
-  )
+  @CsvSource({
+      "PENDING_ACTIVATION, ORGANIZATION_PENDING_VALIDATION",
+      "SUSPENDED, ORGANIZATION_SUSPENDED",
+      "CLOSED, ORGANIZATION_MUST_BE_ACTIVE_TO_ADD_STORE"
+  })
   void shouldRejectStoreWhenOrganizationIsNotActive(
-      OrganizationStatus status
+      OrganizationStatus status,
+      String expectedCode
   ) throws Exception {
     Organization organization = organization(status);
     InMemoryOrganizationRepository repository = repositoryWith(organization);
@@ -462,8 +464,7 @@ class TenantOrganizationControllerTest {
 
     addStore(ORGANIZATION_ID.toString(), VALID_BODY)
         .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.code")
-            .value("ORGANIZATION_MUST_BE_ACTIVE_TO_ADD_STORE"));
+        .andExpect(jsonPath("$.code").value(expectedCode));
 
     assertThat(repository.saveCount()).isZero();
     assertThat(organization.stores()).hasSize(1);
@@ -832,12 +833,14 @@ class TenantOrganizationControllerTest {
    * status code, not STORE_DOES_NOT_BELONG_TO_ORGANIZATION.
    */
   @ParameterizedTest
-  @EnumSource(
-      value = OrganizationStatus.class,
-      names = {"PENDING_ACTIVATION", "SUSPENDED", "CLOSED"}
-  )
+  @CsvSource({
+      "PENDING_ACTIVATION, ORGANIZATION_PENDING_VALIDATION",
+      "SUSPENDED, ORGANIZATION_SUSPENDED",
+      "CLOSED, ORGANIZATION_MUST_BE_ACTIVE_TO_CHANGE_HEADQUARTERS"
+  })
   void shouldRejectHeadquartersChangeWhenOrganizationIsNotActive(
-      OrganizationStatus status
+      OrganizationStatus status,
+      String expectedCode
   ) throws Exception {
     InMemoryOrganizationRepository repository = repositoryWith(
         organizationWithSecondStore(status, true)
@@ -847,8 +850,7 @@ class TenantOrganizationControllerTest {
     for (UUID storeId : List.of(NEW_STORE_ID, UUID.randomUUID())) {
       changeHeadquarters(ORGANIZATION_ID.toString(), storeIdBody(storeId))
           .andExpect(status().isConflict())
-          .andExpect(jsonPath("$.code")
-              .value("ORGANIZATION_MUST_BE_ACTIVE_TO_CHANGE_HEADQUARTERS"));
+          .andExpect(jsonPath("$.code").value(expectedCode));
     }
 
     assertThat(repository.saveCount()).isZero();
@@ -1217,20 +1219,21 @@ class TenantOrganizationControllerTest {
    */
   @ParameterizedTest
   @CsvSource({
-      "PENDING_ACTIVATION, HEADQUARTERS",
-      "PENDING_ACTIVATION, UNKNOWN_STORE",
-      "SUSPENDED, ACTIVE_STORE",
-      "SUSPENDED, INACTIVE_STORE",
-      "SUSPENDED, HEADQUARTERS",
-      "SUSPENDED, UNKNOWN_STORE",
-      "CLOSED, ACTIVE_STORE",
-      "CLOSED, INACTIVE_STORE",
-      "CLOSED, HEADQUARTERS",
-      "CLOSED, UNKNOWN_STORE"
+      "PENDING_ACTIVATION, HEADQUARTERS, ORGANIZATION_PENDING_VALIDATION",
+      "PENDING_ACTIVATION, UNKNOWN_STORE, ORGANIZATION_PENDING_VALIDATION",
+      "SUSPENDED, ACTIVE_STORE, ORGANIZATION_SUSPENDED",
+      "SUSPENDED, INACTIVE_STORE, ORGANIZATION_SUSPENDED",
+      "SUSPENDED, HEADQUARTERS, ORGANIZATION_SUSPENDED",
+      "SUSPENDED, UNKNOWN_STORE, ORGANIZATION_SUSPENDED",
+      "CLOSED, ACTIVE_STORE, ORGANIZATION_MUST_BE_ACTIVE_TO_DEACTIVATE_STORE",
+      "CLOSED, INACTIVE_STORE, ORGANIZATION_MUST_BE_ACTIVE_TO_DEACTIVATE_STORE",
+      "CLOSED, HEADQUARTERS, ORGANIZATION_MUST_BE_ACTIVE_TO_DEACTIVATE_STORE",
+      "CLOSED, UNKNOWN_STORE, ORGANIZATION_MUST_BE_ACTIVE_TO_DEACTIVATE_STORE"
   })
   void shouldRejectDeactivationWhenOrganizationIsNotActive(
       OrganizationStatus status,
-      DeactivationTarget target
+      DeactivationTarget target,
+      String expectedCode
   ) throws Exception {
     Organization organization = organizationForDeactivation(status, target);
     List<String> storesBefore = storeStates(organization);
@@ -1240,8 +1243,7 @@ class TenantOrganizationControllerTest {
     deactivateStore(ORGANIZATION_ID.toString(), target.storeId().toString())
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$", aMapWithSize(3)))
-        .andExpect(jsonPath("$.code")
-            .value("ORGANIZATION_MUST_BE_ACTIVE_TO_DEACTIVATE_STORE"));
+        .andExpect(jsonPath("$.code").value(expectedCode));
 
     assertThat(repository.saveCount()).isZero();
     assertThat(storeStates(organization)).isEqualTo(storesBefore);
@@ -1372,10 +1374,10 @@ class TenantOrganizationControllerTest {
   // =========================================================================
   // POST /api/organizations/{id}/closure (T5d)
   //
-  // Closing is allowed from ACTIVE and SUSPENDED only. Every fixture is
+  // Closing is allowed from ACTIVE only (PO-1, T9g). Every fixture is
   // built through the aggregate's own behaviour (see organization(status)):
   // SUSPENDED is seeded as register -> activate -> suspend, since no handler
-  // suspends.
+  // suspends (it is only used to check the refusal).
   // =========================================================================
 
   // --- Success -------------------------------------------------------------
@@ -1385,9 +1387,19 @@ class TenantOrganizationControllerTest {
     shouldCloseOrganizationFrom(OrganizationStatus.ACTIVE);
   }
 
+  /** T9g, PO-1: a suspended organization can no longer be closed. */
   @Test
-  void shouldCloseSuspendedOrganization() throws Exception {
-    shouldCloseOrganizationFrom(OrganizationStatus.SUSPENDED);
+  void shouldRefuseClosingSuspendedOrganization() throws Exception {
+    Organization organization = organization(OrganizationStatus.SUSPENDED);
+    InMemoryOrganizationRepository repository = repositoryWith(organization);
+    delegateToRealCloseOrganizationHandler(repository);
+
+    closeOrganization(ORGANIZATION_ID.toString())
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("ORGANIZATION_SUSPENDED"));
+
+    assertThat(repository.saveCount()).isZero();
+    assertThat(organization.status()).isEqualTo(OrganizationStatus.SUSPENDED);
   }
 
   /**
@@ -1545,10 +1557,15 @@ class TenantOrganizationControllerTest {
 
   // --- 409 -----------------------------------------------------------------
 
-  /** Only ACTIVE and SUSPENDED can be closed (OrganizationMustBeClosableRule). */
+  /**
+   * Only ACTIVE can be closed (T9g, PO-1: closing from SUSPENDED is now
+   * refused). PENDING_ACTIVATION and SUSPENDED get the dedicated
+   * status codes; CLOSED keeps ORGANIZATION_ALREADY_CLOSED.
+   */
   @ParameterizedTest
   @CsvSource({
-      "PENDING_ACTIVATION, ORGANIZATION_CANNOT_BE_CLOSED",
+      "PENDING_ACTIVATION, ORGANIZATION_PENDING_VALIDATION",
+      "SUSPENDED, ORGANIZATION_SUSPENDED",
       "CLOSED, ORGANIZATION_ALREADY_CLOSED"
   })
   void shouldRejectClosureWhenOrganizationIsNotClosable(

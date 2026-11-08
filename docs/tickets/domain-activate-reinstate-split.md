@@ -59,7 +59,7 @@ As the organization bounded context, I want first activation and reinstatement t
 - A `ReinstateOrganizationCommand`, `ReinstateOrganizationHandler`, `ReinstateOrganizationResult` or their bean. These come with the actor in the suspension-lifecycle ticket or T9 (A3).
 - A `SuspendOrganization` command or handler, and changing `OrganizationMustBeActiveToBeSuspendedRule`'s code for `SUSPENDED` (suspension-lifecycle ticket, R1).
 - The platform path, the unscoped load port, and deciding who suspends or reinstates (T9, PO decision 2).
-- Changes to `close()`. It stays allowed from `ACTIVE` or `SUSPENDED`.
+- Changes to `close()`. It stays allowed from `ACTIVE` or `SUSPENDED`. **Superseded by T9g (PO-1):** `close()` is now allowed from `ACTIVE` only.
 - Suspension reasons, durations or automatic expiry.
 
 ## Acceptance criteria
