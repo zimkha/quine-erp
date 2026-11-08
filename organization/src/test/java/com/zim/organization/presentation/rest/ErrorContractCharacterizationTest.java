@@ -3,6 +3,7 @@ package com.zim.organization.presentation.rest;
 import com.zim.organization.application.exception.OrganizationAlreadyExistsException;
 import com.zim.organization.application.exception.OrganizationNotFoundException;
 import com.zim.organization.presentation.rest.exception.ApiExceptionHandler;
+import com.zim.shared.web.WebSharedConfiguration;
 import com.zim.shared.domain.BusinessRule;
 import com.zim.shared.domain.BusinessRuleViolationException;
 import com.zim.shared.domain.DomainException;
@@ -47,7 +48,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(ErrorContractCharacterizationTest.ProbeController.class)
 @Import({
     ErrorContractCharacterizationTest.ProbeController.class,
-    ApiExceptionHandler.class
+    ApiExceptionHandler.class,
+    WebSharedConfiguration.class
 })
 class ErrorContractCharacterizationTest {
 

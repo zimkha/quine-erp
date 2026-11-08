@@ -28,12 +28,13 @@ import com.zim.organization.domain.valueobject.StoreCode;
 import com.zim.organization.domain.valueobject.StoreId;
 import com.zim.organization.domain.valueobject.StoreName;
 import com.zim.organization.presentation.rest.exception.ApiExceptionHandler;
+import com.zim.shared.web.WebSharedConfiguration;
 import com.zim.organization.presentation.rest.request.AddStoreRequest;
 import com.zim.organization.presentation.rest.request.ChangeHeadquartersRequest;
-import com.zim.organization.testing.DefaultLocaleExtension;
+import com.zim.shared.web.testing.DefaultLocaleExtension;
 import com.zim.organization.testing.InMemoryDomainEventPublisher;
 import com.zim.organization.testing.InMemoryOrganizationRepository;
-import com.zim.organization.testing.LocaleScenario;
+import com.zim.shared.web.testing.LocaleScenario;
 import com.zim.shared.domain.BusinessRuleViolationException;
 import com.zim.shared.domain.TenantId;
 import com.zim.shared.tenant.CurrentTenantProvider;
@@ -83,7 +84,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(TenantOrganizationController.class)
 // The test application does not component-scan, so the web slice has to be
 // imported explicitly.
-@Import({TenantOrganizationController.class, ApiExceptionHandler.class})
+@Import({
+    TenantOrganizationController.class,
+    ApiExceptionHandler.class,
+    WebSharedConfiguration.class
+})
 @ExtendWith(DefaultLocaleExtension.class)
 class TenantOrganizationControllerTest {
 

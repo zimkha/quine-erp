@@ -50,6 +50,20 @@ class QuineApplicationIT {
   @Autowired
   CreateOwnerHandler createOwnerHandler;
 
+  @Autowired
+  org.springframework.context.ApplicationContext applicationContext;
+
+  /**
+   * T7b-0 AC5 on the real application context: exactly one generic advice,
+   * no exception type handled by two advices, and every module advice ordered
+   * before the generic one.
+   */
+  @Test
+  void shouldMapEachExceptionThroughExactlyOneAdviceInTheRealContext() {
+    com.zim.shared.web.testing.AdviceAssertions
+        .assertOneMappingPerException(applicationContext);
+  }
+
   @Test
   void shouldGiveEachModuleItsOwnSchemaAndMigrationHistory() {
     assertThat(tablesIn("organization"))

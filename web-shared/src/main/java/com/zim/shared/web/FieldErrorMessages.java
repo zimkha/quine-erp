@@ -1,4 +1,4 @@
-package com.zim.organization.presentation.rest.exception;
+package com.zim.shared.web;
 
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.constraints.Email;
@@ -11,6 +11,7 @@ import org.springframework.validation.FieldError;
 
 import java.lang.annotation.Annotation;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Fixed English text for a request field error, built from the constraint
@@ -25,6 +26,17 @@ public final class FieldErrorMessages {
   private static final String PATTERN = "must match the required format";
   private static final String EMAIL = "must be a valid e-mail address";
   private static final String FALLBACK = "is invalid";
+
+  /**
+   * The constraint types that have a pinned text. A request DTO may only
+   * use these (see the DTO guard in the shared test support); a new entry
+   * needs a branch in {@link #text(FieldError)} and a row in the pinned
+   * texts table of docs/tickets/validation-message-locale.md.
+   */
+  public static final Set<Class<? extends Annotation>> PINNED_CONSTRAINTS =
+      Set.of(
+          NotBlank.class, NotNull.class, Size.class, Pattern.class, Email.class
+      );
 
   private FieldErrorMessages() {
   }

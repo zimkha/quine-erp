@@ -1,4 +1,4 @@
-package com.zim.organization.testing;
+package com.zim.shared.web.testing;
 
 import org.junit.jupiter.params.provider.Arguments;
 import org.springframework.http.HttpHeaders;

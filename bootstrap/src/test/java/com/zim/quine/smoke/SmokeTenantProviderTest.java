@@ -9,6 +9,7 @@ import com.zim.organization.application.handler.DeactivateStoreHandler;
 import com.zim.organization.application.result.ActivateOrganizationResult;
 import com.zim.organization.presentation.rest.TenantOrganizationController;
 import com.zim.organization.presentation.rest.exception.ApiExceptionHandler;
+import com.zim.shared.web.WebSharedConfiguration;
 import com.zim.quine.tenant.FailClosedTenantProvider;
 import com.zim.shared.domain.TenantId;
 import org.junit.jupiter.api.Test;
@@ -43,6 +44,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import({
     TenantOrganizationController.class,
     ApiExceptionHandler.class,
+    WebSharedConfiguration.class,
     FailClosedTenantProvider.class,
     SmokeTenantProvider.class,
     SmokeController.class

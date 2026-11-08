@@ -1,7 +1,7 @@
-package com.zim.organization.presentation.rest.exception;
+package com.zim.shared.web;
 
-import com.zim.organization.testing.DefaultLocaleExtension;
-import com.zim.organization.testing.LocaleScenario;
+import com.zim.shared.web.testing.DefaultLocaleExtension;
+import com.zim.shared.web.testing.LocaleScenario;
 import jakarta.validation.Constraint;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
