@@ -137,7 +137,7 @@ class GenericExceptionAdviceTest {
     ResultActions result = mockMvc.perform(get("/api/test/probe/locking"));
 
     expectError(result, 409, "CONCURRENT_MODIFICATION",
-        "The organization was modified by another request; "
+        "The resource was modified by another request; "
             + "reload it and retry");
     assertNoLeak(result, "select ", "probe_table");
     result.andExpect(header().doesNotExist("WWW-Authenticate"));

@@ -141,7 +141,7 @@ public class GenericExceptionAdvice {
     return error(
         HttpStatus.CONFLICT,
         "CONCURRENT_MODIFICATION",
-        "The organization was modified by another request; "
+        "The resource was modified by another request; "
             + "reload it and retry"
     );
   }
