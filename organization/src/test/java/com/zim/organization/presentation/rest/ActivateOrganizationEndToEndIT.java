@@ -42,7 +42,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * handler call commits its own. Each test registers its own tenants with a
  * unique legal name, so committed rows don't collide across runs.
  */
-@SpringBootTest(classes = OrganizationJpaTestApplication.class)
+// The route is off by default (T7b-2); this IT exercises it.
+@SpringBootTest(
+    classes = OrganizationJpaTestApplication.class,
+    properties = "quine.organization.tenant-activation.enabled=true"
+)
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 // The test applications do not component-scan: the web slice, the module
@@ -50,6 +54,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import({
     OrganizationConfiguration.class,
     TenantOrganizationController.class,
+    TenantActivationController.class,
     ApiExceptionHandler.class,
     WebSharedConfiguration.class,
     SettableTenantProvider.ProviderConfiguration.class,

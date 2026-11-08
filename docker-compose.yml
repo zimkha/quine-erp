@@ -1,5 +1,6 @@
-# Local smoke environment: Postgres + the app with the "smoke" profile, which
-# reads the tenant from the X-Smoke-Tenant header. Never use it in production.
+# Local environment: Postgres + the app, with no profile and real authentication
+# (register, log in, bearer token). Local and team use only, never production:
+# it turns on the tenant self-activation route (see below).
 #
 # No credential is written here: export the variables first (or put them in a
 # git-ignored .env file), e.g.
@@ -31,11 +32,15 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      SPRING_PROFILES_ACTIVE: smoke
       QUINE_DB_URL: jdbc:postgresql://postgres:5432/quine
       QUINE_DB_USER: quine
       QUINE_DB_PASSWORD: ${QUINE_DB_PASSWORD:?QUINE_DB_PASSWORD must be set}
       QUINE_JWT_SECRET: ${QUINE_JWT_SECRET:?QUINE_JWT_SECRET must be set (standard Base64, at least 32 bytes)}
+      # Transitional route POST /api/organizations/{id}/activation (T7 PO-1): any
+      # registered owner can activate their own organization, skipping the
+      # platform's validation. True here only, for local and team use. It stays
+      # false (route absent) everywhere else; T9d removes the route.
+      QUINE_ORGANIZATION_TENANT_ACTIVATION_ENABLED: "true"
     ports:
       - "127.0.0.1:18080:18080"
 

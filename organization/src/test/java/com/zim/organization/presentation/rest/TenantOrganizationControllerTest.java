@@ -81,11 +81,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(TenantOrganizationController.class)
+// The activation route is off by default (T7b-2); these tests exercise it.
+@WebMvcTest(
+    controllers = TenantOrganizationController.class,
+    properties = "quine.organization.tenant-activation.enabled=true"
+)
 // The test application does not component-scan, so the web slice has to be
 // imported explicitly.
 @Import({
     TenantOrganizationController.class,
+    TenantActivationController.class,
     ApiExceptionHandler.class,
     WebSharedConfiguration.class
 })

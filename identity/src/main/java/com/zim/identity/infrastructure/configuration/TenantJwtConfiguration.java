@@ -3,8 +3,10 @@ package com.zim.identity.infrastructure.configuration;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import com.zim.identity.application.port.AccessTokenIssuer;
 import com.zim.identity.infrastructure.security.JwtAccessTokenIssuer;
+import com.zim.identity.infrastructure.security.JwtTenantProvider;
 import com.zim.identity.infrastructure.security.TenantJwtValidators;
 import com.zim.identity.infrastructure.security.TenantJwtSettings;
+import com.zim.shared.tenant.CurrentTenantProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
@@ -51,6 +53,12 @@ public class TenantJwtConfiguration {
         .build();
     decoder.setJwtValidator(TenantJwtValidators.tenant());
     return decoder;
+  }
+
+  /** The one {@code CurrentTenantProvider} of the application. */
+  @Bean
+  CurrentTenantProvider currentTenantProvider() {
+    return new JwtTenantProvider();
   }
 
   @Bean

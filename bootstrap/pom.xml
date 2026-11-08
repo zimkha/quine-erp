@@ -44,6 +44,19 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- The security chain (T7b-2): the only module with a Spring Security
+             starter. identity has only the JOSE artefact, organization and
+             web-shared have no security at all. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc-test</artifactId>

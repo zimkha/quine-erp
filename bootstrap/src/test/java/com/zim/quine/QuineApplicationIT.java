@@ -3,6 +3,7 @@ package com.zim.quine;
 import com.zim.identity.application.command.CreateOwnerCommand;
 import com.zim.identity.application.handler.CreateOwnerHandler;
 import com.zim.identity.application.result.CreateOwnerResult;
+import com.zim.identity.infrastructure.security.JwtTenantProvider;
 import com.zim.shared.domain.BusinessRuleViolationException;
 import com.zim.shared.domain.TenantId;
 import com.zim.shared.tenant.CurrentTenantProvider;
@@ -10,7 +11,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -34,7 +34,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * handler works through the real wiring.
  */
 @SpringBootTest(classes = QuineApplication.class)
-@ActiveProfiles("smoke")
 class QuineApplicationIT {
 
   @DynamicPropertySource
@@ -220,12 +219,11 @@ class QuineApplicationIT {
     );
   }
 
-  @Autowired
-  CurrentTenantProvider tenantProvider;
-
+  /** T7b-AC14: the identity-backed provider is the only one, whatever the profile. */
   @Test
-  void shouldUseTheSmokeProviderUnderTheSmokeProfile() {
-    assertThat(tenantProvider.getClass().getSimpleName())
-        .isEqualTo("SmokeTenantProvider");
+  void shouldHaveExactlyOneTenantProviderAndItIsTheJwtOne() {
+    assertThat(applicationContext.getBeansOfType(CurrentTenantProvider.class).values())
+        .singleElement()
+        .isInstanceOf(JwtTenantProvider.class);
   }
 }
