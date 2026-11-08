@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "606c13be-547c-4acd-b383-a9c2d7db439d",
     "name": "quine-erp — Organization API",
-    "description": "Test data and assertions for every organization endpoint (register, T5a–T5e).\n\n**Run the whole collection in order** (Collection Runner or newman). Each request stores the ids that later requests need.\n\n**Owner (T7c):** registering also creates the tenant's owner from `ownerEmail` and `ownerPassword`. The collection generates throwaway demo values at the start of each run (collection variables `ownerPassword`, `ownerEmailA`, ...), so no password is stored in this file. After T7c the owner exists with a hashed password but cannot log in yet: login is T7b.\n\n**Tenant:** the real application has no tenant source yet: identity (T7) is not built and `bootstrap` is not runnable. So the tenant-scoped endpoints need the smoke runner, which reads the tenant from the `X-Smoke-Tenant` header. The production code never reads a tenant from a header. Without the runner, every tenant endpoint answers 401 `TENANT_NOT_RESOLVED`.\n\n**Activation:** `/smoke/organizations/{id}/activate` belongs to the runner only. Setup still uses it to keep organization A independent of the real endpoint. The real activate endpoint (T5e) is tested in folder 6.\n\nClients must branch on `code` only. `message` is developer-facing English (T5f).",
+    "description": "Test data and assertions for every organization endpoint (register, T5a–T5e).\n\n**Run the whole collection in order** (Collection Runner or newman). Each request stores the ids that later requests need.\n\n**Owner (T7c):** registering also creates the tenant's owner from `ownerEmail` and `ownerPassword`. The collection generates throwaway demo values at the start of each run (collection variables `ownerPassword`, `ownerEmailA`, ...), so no password is stored in this file. The owner can log in with `POST /api/auth/login` (T7b-1, folder 7), which stores the run-time variables `tokenA` and `tokenB`; tokens are not honoured yet (T7b-2).\n\n**Tenant:** the real application has no tenant source yet: the tenant is not resolved from a real login yet (the chain is T7b-2). So the tenant-scoped endpoints need the smoke runner, which reads the tenant from the `X-Smoke-Tenant` header. The production code never reads a tenant from a header. Without the runner, every tenant endpoint answers 401 `TENANT_NOT_RESOLVED`.\n\n**Activation:** `/smoke/organizations/{id}/activate` belongs to the runner only. Setup still uses it to keep organization A independent of the real endpoint. The real activate endpoint (T5e) is tested in folder 6.\n\nClients must branch on `code` only. `message` is developer-facing English (T5f).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -2274,6 +2274,462 @@
           }
         }
       ]
+    },
+    {
+      "name": "7. Login (T7b-1) — POST /api/auth/login",
+      "description": "Additive. The login endpoint is public. It issues a token (kept in the run-time collection variables `tokenA` and `tokenB`, which have no initial value) but nothing honours the token yet: tenant endpoints still use the smoke runner until T7b-2. Needs the owners registered by folder 0. The demo password is the one generated at the start of the run.",
+      "item": [
+        {
+          "name": "Login owner A → 200 (stores tokenA)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"tokenType is Bearer and expiresIn is a number of seconds\", () => {",
+                  "  pm.expect(body.tokenType).to.eql(\"Bearer\");",
+                  "  pm.expect(body.expiresIn).to.be.a(\"number\").and.to.be.above(0);",
+                  "});",
+                  "pm.test(\"body is {accessToken, tokenType, expiresIn}\", () => pm.expect(Object.keys(body).sort()).to.eql([\"accessToken\",\"expiresIn\",\"tokenType\"]));",
+                  "// The token is kept in a collection variable set at run time: it has no initial value and is never exported.",
+                  "pm.collectionVariables.set(\"tokenA\", body.accessToken);",
+                  "const claims = JSON.parse(atob(body.accessToken.split(\".\")[1].replace(/-/g, \"+\").replace(/_/g, \"/\")));",
+                  "pm.test(\"tenantId claim is the tenant of the owner, audience is quine-tenant\", () => {",
+                  "  pm.expect(claims.tenantId).to.eql(pm.collectionVariables.get(\"tenantA\"));",
+                  "  pm.expect(claims.aud).to.eql([\"quine-tenant\"]);",
+                  "  pm.expect(claims.exp - claims.iat).to.eql(body.expiresIn);",
+                  "});",
+                  "pm.test(\"no e-mail, password or hash in the token or the response\", () => {",
+                  "  const text = (pm.response.text() + JSON.stringify(claims)).toLowerCase();",
+                  "  pm.expect(text).to.not.include(\"@\");",
+                  "  pm.expect(text).to.not.include(pm.collectionVariables.get(\"ownerPassword\").toLowerCase());",
+                  "  pm.expect(text).to.not.include(\"$2\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{ownerEmailA}}\",\n  \"password\": \"{{ownerPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Login owner B → 200 (stores tokenB)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"tokenType is Bearer and expiresIn is a number of seconds\", () => {",
+                  "  pm.expect(body.tokenType).to.eql(\"Bearer\");",
+                  "  pm.expect(body.expiresIn).to.be.a(\"number\").and.to.be.above(0);",
+                  "});",
+                  "pm.test(\"body is {accessToken, tokenType, expiresIn}\", () => pm.expect(Object.keys(body).sort()).to.eql([\"accessToken\",\"expiresIn\",\"tokenType\"]));",
+                  "// The token is kept in a collection variable set at run time: it has no initial value and is never exported.",
+                  "pm.collectionVariables.set(\"tokenB\", body.accessToken);",
+                  "const claims = JSON.parse(atob(body.accessToken.split(\".\")[1].replace(/-/g, \"+\").replace(/_/g, \"/\")));",
+                  "pm.test(\"tenantId claim is the tenant of the owner, audience is quine-tenant\", () => {",
+                  "  pm.expect(claims.tenantId).to.eql(pm.collectionVariables.get(\"tenantB\"));",
+                  "  pm.expect(claims.aud).to.eql([\"quine-tenant\"]);",
+                  "  pm.expect(claims.exp - claims.iat).to.eql(body.expiresIn);",
+                  "});",
+                  "pm.test(\"no e-mail, password or hash in the token or the response\", () => {",
+                  "  const text = (pm.response.text() + JSON.stringify(claims)).toLowerCase();",
+                  "  pm.expect(text).to.not.include(\"@\");",
+                  "  pm.expect(text).to.not.include(pm.collectionVariables.get(\"ownerPassword\").toLowerCase());",
+                  "  pm.expect(text).to.not.include(\"$2\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{ownerEmailB}}\",\n  \"password\": \"{{ownerPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Login owner A, e-mail in upper case and with spaces → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"same tenant as the plain login\", () => {",
+                  "  const claims = JSON.parse(atob(pm.response.json().accessToken.split(\".\")[1].replace(/-/g, \"+\").replace(/_/g, \"/\")));",
+                  "  pm.expect(claims.tenantId).to.eql(pm.collectionVariables.get(\"tenantA\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"  {{ownerEmailAUpper}}  \",\n  \"password\": \"{{ownerPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Unknown e-mail → 401 INVALID_CREDENTIALS",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"code is INVALID_CREDENTIALS\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_CREDENTIALS\"));",
+                  "pm.test(\"WWW-Authenticate is the one of every 401\", () => pm.expect(pm.response.headers.get(\"WWW-Authenticate\")).to.eql(\"Bearer realm=\\\"quine-erp\\\"\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));",
+                  "pm.collectionVariables.set(\"loginFailureMessage\", pm.response.json().message);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"nobody-{{runSuffix}}@example.com\",\n  \"password\": \"{{ownerPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Wrong password → 401, same body as unknown e-mail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"code is INVALID_CREDENTIALS\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_CREDENTIALS\"));",
+                  "pm.test(\"WWW-Authenticate is the one of every 401\", () => pm.expect(pm.response.headers.get(\"WWW-Authenticate\")).to.eql(\"Bearer realm=\\\"quine-erp\\\"\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));",
+                  "pm.test(\"same message as the first failure (nothing reveals which part was wrong)\", () => pm.expect(pm.response.json().message).to.eql(pm.collectionVariables.get(\"loginFailureMessage\")));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{ownerEmailA}}\",\n  \"password\": \"wrong-demo-password-0\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Malformed e-mail → 401, not 400 or 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"code is INVALID_CREDENTIALS\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_CREDENTIALS\"));",
+                  "pm.test(\"WWW-Authenticate is the one of every 401\", () => pm.expect(pm.response.headers.get(\"WWW-Authenticate\")).to.eql(\"Bearer realm=\\\"quine-erp\\\"\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));",
+                  "pm.test(\"same message as the first failure (nothing reveals which part was wrong)\", () => pm.expect(pm.response.json().message).to.eql(pm.collectionVariables.get(\"loginFailureMessage\")));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"not-an-email\",\n  \"password\": \"{{ownerPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Short password → 401, not 400 or 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"code is INVALID_CREDENTIALS\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_CREDENTIALS\"));",
+                  "pm.test(\"WWW-Authenticate is the one of every 401\", () => pm.expect(pm.response.headers.get(\"WWW-Authenticate\")).to.eql(\"Bearer realm=\\\"quine-erp\\\"\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));",
+                  "pm.test(\"same message as the first failure (nothing reveals which part was wrong)\", () => pm.expect(pm.response.json().message).to.eql(pm.collectionVariables.get(\"loginFailureMessage\")));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{ownerEmailA}}\",\n  \"password\": \"short\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Blank password → 400 VALIDATION_FAILED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code is VALIDATION_FAILED\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_FAILED\"));",
+                  "pm.test(\"pinned message\", () => pm.expect(pm.response.json().message).to.eql(\"password: must not be blank\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{ownerEmailA}}\",\n  \"password\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Missing body fields → 400 VALIDATION_FAILED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"pinned message\", () => pm.expect(pm.response.json().message).to.eql(\"email: must not be blank; password: must not be blank\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
     }
   ],
   "variable": [
@@ -2331,6 +2787,18 @@
     },
     {
       "key": "ownerEmailAUpper",
+      "value": ""
+    },
+    {
+      "key": "tokenA",
+      "value": ""
+    },
+    {
+      "key": "tokenB",
+      "value": ""
+    },
+    {
+      "key": "loginFailureMessage",
       "value": ""
     }
   ]
