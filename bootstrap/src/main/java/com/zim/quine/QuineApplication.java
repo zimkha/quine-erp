@@ -5,6 +5,7 @@ import com.zim.organization.infrastructure.configuration.OrganizationConfigurati
 import com.zim.organization.presentation.rest.OrganizationController;
 import com.zim.organization.presentation.rest.TenantOrganizationController;
 import com.zim.organization.presentation.rest.exception.ApiExceptionHandler;
+import com.zim.shared.web.WebSharedConfiguration;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
@@ -27,7 +28,8 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
     IdentityConfiguration.class,
     OrganizationController.class,
     TenantOrganizationController.class,
-    ApiExceptionHandler.class
+    ApiExceptionHandler.class,
+    WebSharedConfiguration.class
 })
 public class QuineApplication {
 

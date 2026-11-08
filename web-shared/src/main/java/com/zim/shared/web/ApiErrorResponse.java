@@ -1,4 +1,4 @@
-package com.zim.organization.presentation.rest.exception;
+package com.zim.shared.web;
 
 import java.time.Instant;
 

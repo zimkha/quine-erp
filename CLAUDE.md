@@ -14,14 +14,18 @@ mvn clean install
 mvn -pl organization -am clean install
 
 # Run only unit tests (default surefire include patterns: *Test.java, *Tests.java, *TestCase.java)
-mvn -pl organization test
+mvn -pl organization -am test
 
-# Run a single test class
-mvn -pl organization test -Dtest=OrganizationTest
+# Run a single test class (-am builds the upstream modules, whose tests are skipped by the filter)
+mvn -pl organization -am test -Dtest=OrganizationTest -Dsurefire.failIfNoSpecifiedTests=false
 
 # Run a single test method
-mvn -pl organization test -Dtest=OrganizationTest#shouldActivateWhenPending
+mvn -pl organization -am test -Dtest=OrganizationTest#shouldActivateWhenPending -Dsurefire.failIfNoSpecifiedTests=false
 ```
+
+**`-am` is required** (or an earlier `mvn install`): `organization` needs `shared` and `web-shared`, and its
+tests use the `web-shared` **test-jar** (locale and DTO-guard test support). Without `-am` and without those
+artifacts in `~/.m2`, `mvn -pl organization test` fails at dependency resolution.
 
 **Integration tests are not run by `mvn test`.** Classes suffixed `*IT.java` (e.g.
 `OrganizationRepositoryAdapterIT`, `OrganizationDatabaseConstraintsIT`) don't match surefire's
@@ -29,7 +33,7 @@ default include patterns, and no `maven-failsafe-plugin` is configured in the pa
 must be run explicitly:
 
 ```bash
-mvn -pl organization test -Dtest=OrganizationRepositoryAdapterIT
+mvn -pl organization -am test -Dtest=OrganizationRepositoryAdapterIT -Dsurefire.failIfNoSpecifiedTests=false
 ```
 
 These `*IT` tests use **Testcontainers** (`testcontainers-postgresql`) and use the
@@ -39,12 +43,19 @@ running** to execute them.
 ## Architecture
 
 **Modular monolith.** The root `pom.xml` (`packaging=pom`) aggregates one Maven module per
-bounded context: `shared`, `organization`, `identity`, `customer`, `supplier`, `catalog`,
+bounded context: `shared`, `web-shared`, `organization`, `identity`, `customer`, `supplier`, `catalog`,
 `inventory`, `purchasing`, `sales`, `cash`, `notification`, `reporting`, `bootstrap`.
 
 - **`shared`** is the shared kernel: `AggregateRoot`, `DomainEvent`, `BusinessRule` (+
   `BusinessRuleViolationException`), `DomainException`, `TenantId`. Every other module depends on it and
   builds its own aggregates/rules on top of these base types.
+- **`web-shared`** (package `com.zim.shared.web`) is the shared web component: `ApiErrorResponse`,
+  `FieldErrorMessages` (the pinned validation texts), the unscoped `GenericExceptionAdvice` and
+  `WebSharedConfiguration`, which a module slice or `bootstrap` imports explicitly (no auto-configuration, so a
+  forgotten import fails loudly). It depends on `shared` only, never on a business module. Its test-jar
+  (`com.zim.shared.web.testing`: `DefaultLocaleExtension`, `LocaleScenario`, `RequestDtoConstraintGuard`,
+  `AdviceAssertions`) is the shared test support. `maven-enforcer-plugin` `bannedDependencies` in each
+  module pom forbids `organization` and `identity` from depending on each other.
 - **`bootstrap`** is the composition root: a Spring Boot app (`QuineApplication`) that wires the
   business modules (today `organization` and `identity`). Until login (T7b) exists there is no real tenant
   source: without a profile every tenant-scoped endpoint answers 401 (`FailClosedTenantProvider`).
@@ -100,7 +111,7 @@ com.zim.organization
 └── presentation
     └── rest
         ├── request / response   # REST DTOs
-        └── exception            # ApiExceptionHandler, ApiErrorResponse
+        └── exception            # the module's own ApiExceptionHandler (ApiErrorResponse is in web-shared)
 ```
 
 The `domain` layer is framework-free; `application` handlers depend only on domain types and
@@ -151,9 +162,13 @@ explains why. Full list and rationale: `docs/tickets/cross-module-conventions-T6
   current status. No endpoint is a silent no-op.
 - Family `ORGANIZATION_<STATE>` (`ORGANIZATION_PENDING_VALIDATION`, `ORGANIZATION_SUSPENDED`): a tenant action
   refused because of the current state, never "target reached" (not in the "already" list). Closure only from `ACTIVE`.
-- Scope each module's `@RestControllerAdvice` with `basePackageClasses`. `ApiErrorResponse` and the
-  generic handlers stay in `organization` until a second module exists, then are extracted once into a
-  shared web component (`web-shared`), never copied. The shared generic advice will be unscoped.
+- `ApiErrorResponse` and the generic handlers (validation, malformed body, 401, `BusinessRuleViolationException`,
+  `DomainException`, `CONCURRENT_MODIFICATION`, `DATA_INTEGRITY_VIOLATION`) live once in `web-shared`
+  (`docs/tickets/web-shared-T7b-0.md`), never copied. The generic advice is unscoped and `@Order(AdviceOrder.GENERIC)`.
+- A module advice is scoped with `basePackageClasses`, annotated `@Order(AdviceOrder.MODULE)` (on the class),
+  and handles only the exceptions its module owns, so each exception type has exactly one advice (the first
+  advice with a matching handler wins, even over a more specific one later). Every slice or IT that imports a
+  controller also imports `WebSharedConfiguration`, and `bootstrap` imports it once.
 
 **Validation messages** (`docs/tickets/validation-message-locale.md`)
 - Build each message from the constraint type with the pinned texts, never `getDefaultMessage()` or
@@ -167,9 +182,8 @@ explains why. Full list and rationale: `docs/tickets/cross-module-conventions-T6
 - A V3-style migration (column, backfill and constraint in one transaction) is acceptable only while no
   deployed database exists; after that follow `docs/conventions-migrations.md`.
 
-**Deferred until a second module exists:** ArchUnit rules, the shared validation-message helper and the
-shared web component for the error contract (its `CONCURRENT_MODIFICATION` message hardcodes
-"organization" and must be generalized when extracted).
+**Deferred:** ArchUnit rules (separate ticket T7b-0b). The shared validation-message helper and the shared web
+component for the error contract are done: `web-shared` (T7b-0).
 
 ## Stack
 

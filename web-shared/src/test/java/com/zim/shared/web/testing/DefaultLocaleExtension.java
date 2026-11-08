@@ -1,4 +1,4 @@
-package com.zim.organization.testing;
+package com.zim.shared.web.testing;
 
 import org.junit.jupiter.api.extension.AfterEachCallback;
 import org.junit.jupiter.api.extension.BeforeEachCallback;

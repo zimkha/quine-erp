@@ -33,8 +33,10 @@ in this codebase — when in doubt, read the equivalent file there before writin
   Data repositories (`infrastructure/persistence/repository`), `DomainEventPublisher`
   implementation (`infrastructure/event`), Spring `@Configuration` wiring
   (`infrastructure/configuration`).
-- **`presentation`**: REST controller, request/response DTOs, `ApiExceptionHandler` /
-  `ApiErrorResponse` pattern under `presentation/rest`.
+- **`presentation`**: REST controller, request/response DTOs under `presentation/rest`, and an
+  `ApiExceptionHandler` for the module's own exceptions only (scoped with `basePackageClasses`,
+  `@Order(AdviceOrder.MODULE)`). `ApiErrorResponse`, `FieldErrorMessages` and the generic advice live in
+  `web-shared` (`com.zim.shared.web`): import `WebSharedConfiguration` in every slice or IT that imports a controller.
 - **Multi-tenancy**: new aggregates carry `TenantId`; persistence queries stay tenant-scoped.
 - **Persistence migrations**: new Flyway migration under
   `<module>/src/main/resources/db/migration/<module>/V*__*.sql`, scoped to that module's own

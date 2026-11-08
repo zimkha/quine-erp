@@ -31,7 +31,7 @@
   - No module ships a `ValidationMessages.properties`.
   - Request DTOs may use only constraints that have a pinned text, and no class-level constraints. Adding a new one needs a text, a table row and a guard-test update.
   - Validation messages are pinned in tests under a non-English locale **and** `Accept-Language`.
-- **Shared validation helper:** when a second module has REST endpoints, extract the helper to a Spring-aware web-support module, **not** `shared`, which is framework-free. Each module keeps its own scoped advice that delegates to it. At that point add an ArchUnit rule: no `getDefaultMessage()` in `..presentation..`.
+- **Shared validation helper:** when a second module has REST endpoints, extract the helper to a Spring-aware web-support module, **not** `shared`, which is framework-free. ~~Each module keeps its own scoped advice that delegates to it.~~ *Superseded by T6 and done by T7b-0: the helper and the generic advice live once in `web-shared`; a module advice handles only its own exceptions.* At that point add an ArchUnit rule: no `getDefaultMessage()` in `..presentation..`.
 - **Path and query parameter constraints:** before any controller puts constraints on path or query parameters, map `HandlerMethodValidationException` to the same texts.
 - **Test applications must not component-scan** (from the T4 review).
 

@@ -7,6 +7,7 @@ import com.zim.organization.application.handler.CloseOrganizationHandler;
 import com.zim.organization.application.handler.DeactivateStoreHandler;
 import com.zim.organization.presentation.rest.TenantOrganizationController;
 import com.zim.organization.presentation.rest.exception.ApiExceptionHandler;
+import com.zim.shared.web.WebSharedConfiguration;
 import com.zim.shared.tenant.TenantNotResolvedException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import({
     TenantOrganizationController.class,
     ApiExceptionHandler.class,
+    WebSharedConfiguration.class,
     FailClosedTenantProvider.class
 })
 class FailClosedTenantProviderTest {

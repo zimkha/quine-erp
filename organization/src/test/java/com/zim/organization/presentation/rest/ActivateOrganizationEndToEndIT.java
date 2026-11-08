@@ -10,6 +10,7 @@ import com.zim.organization.infrastructure.configuration.OrganizationConfigurati
 import com.zim.organization.testing.TestOwnerRegistrar;
 import com.zim.organization.infrastructure.persistence.support.PostgresIntegrationTest;
 import com.zim.organization.presentation.rest.exception.ApiExceptionHandler;
+import com.zim.shared.web.WebSharedConfiguration;
 import com.zim.shared.domain.TenantId;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -50,6 +51,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     OrganizationConfiguration.class,
     TenantOrganizationController.class,
     ApiExceptionHandler.class,
+    WebSharedConfiguration.class,
     SettableTenantProvider.ProviderConfiguration.class,
     TestOwnerRegistrar.Configuration.class
 })

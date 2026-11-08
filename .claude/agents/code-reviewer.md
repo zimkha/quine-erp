@@ -40,7 +40,7 @@ Ranked by what actually matters here:
    mapped into non-nullable records, `null` returned where the caller dereferences.
 3. **Exception handling** — swallowed exceptions, `BusinessRuleViolationException` /
    `DomainException` caught and flattened into a generic 500, missing mapping in
-   `ApiExceptionHandler`, exceptions used for control flow.
+   the module's `ApiExceptionHandler` or the generic advice in `web-shared` (`GenericExceptionAdvice`), an exception type mapped by two advices, exceptions used for control flow.
 4. **Layering violations** — Spring or JPA types leaking into `domain` or `application`, a
    handler depending on an adapter instead of a `port`, a module importing another module's
    internals, a new aggregate or table missing `TenantId`, a Flyway migration outside its own

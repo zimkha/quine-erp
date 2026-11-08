@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.zim.quine</groupId>
+        <artifactId>quine-erp</artifactId>
+        <version>1.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>web-shared</artifactId>
+    <packaging>jar</packaging>
+
+    <name>web-shared</name>
+    <description>
+        Error contract and generic exception mapping shared by the REST modules.
+        Depends on shared only: never on a business module.
+    </description>
+
+    <dependencies>
+
+        <dependency>
+            <groupId>com.zim.quine</groupId>
+            <artifactId>shared</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- No spring-webmvc and never spring-boot-starter-web (Tomcat). -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-tx</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.validation</groupId>
+            <artifactId>jakarta.validation-api</artifactId>
+        </dependency>
+
+        <!-- TESTS (also used by the test-jar shared with the modules) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- web-shared depends on shared only, never on a business module (T7b-0 AC4). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>enforce-no-business-module</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <excludes>
+                                        <exclude>com.zim.quine:organization</exclude>
+                                        <exclude>com.zim.quine:identity</exclude>
+                                        <exclude>com.zim.quine:customer</exclude>
+                                        <exclude>com.zim.quine:supplier</exclude>
+                                        <exclude>com.zim.quine:catalog</exclude>
+                                        <exclude>com.zim.quine:inventory</exclude>
+                                        <exclude>com.zim.quine:purchasing</exclude>
+                                        <exclude>com.zim.quine:sales</exclude>
+                                        <exclude>com.zim.quine:cash</exclude>
+                                        <exclude>com.zim.quine:notification</exclude>
+                                        <exclude>com.zim.quine:reporting</exclude>
+                                        <exclude>com.zim.quine:bootstrap</exclude>
+                                    </excludes>
+                                    <message>web-shared must depend on shared only, never on a business module</message>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Shared test support (com.zim.shared.web.testing) for the modules. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>${maven.jar.plugin.version}</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>test-jar</goal>
+                        </goals>
+                        <configuration>
+                            <!-- Only the support package: never a test application
+                                 (@SpringBootConfiguration) or a test of this module,
+                                 which would leak into a consumer's scan. -->
+                            <includes>
+                                <include>com/zim/shared/web/testing/**</include>
+                            </includes>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
