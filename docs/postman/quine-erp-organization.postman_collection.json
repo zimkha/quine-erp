@@ -2,13 +2,13 @@
   "info": {
     "_postman_id": "606c13be-547c-4acd-b383-a9c2d7db439d",
     "name": "quine-erp — Organization API",
-    "description": "Test data and assertions for every organization endpoint (register, T5a–T5e).\n\n**Run the whole collection in order** (Collection Runner or newman). Each request stores the ids that later requests need.\n\n**Owner (T7c):** registering also creates the tenant's owner from `ownerEmail` and `ownerPassword`. The collection generates throwaway demo values at the start of each run (collection variables `ownerPassword`, `ownerEmailA`, ...), so no password is stored in this file. The owner can log in with `POST /api/auth/login` (T7b-1, folder 7), which stores the run-time variables `tokenA` and `tokenB`; tokens are not honoured yet (T7b-2).\n\n**Tenant:** the real application has no tenant source yet: the tenant is not resolved from a real login yet (the chain is T7b-2). So the tenant-scoped endpoints need the smoke runner, which reads the tenant from the `X-Smoke-Tenant` header. The production code never reads a tenant from a header. Without the runner, every tenant endpoint answers 401 `TENANT_NOT_RESOLVED`.\n\n**Activation:** `/smoke/organizations/{id}/activate` belongs to the runner only. Setup still uses it to keep organization A independent of the real endpoint. The real activate endpoint (T5e) is tested in folder 6.\n\nClients must branch on `code` only. `message` is developer-facing English (T5f).",
+    "description": "Test data and assertions for every organization endpoint (register, T5a–T5e), the login (T7b-1) and the real authentication of the tenant endpoints (T7b-2).\n\n**Run the whole collection in order** (Collection Runner or newman). Each request stores the ids and tokens that later requests need.\n\n**Start the application** with `docker compose up -d --build` (no profile; compose enables the tenant activation route, see below). Export `QUINE_DB_PASSWORD` and `QUINE_JWT_SECRET` first, with random values, as the README says: nothing secret is stored in this collection.\n\n**Owners and tokens:** registering creates the tenant's owner from `ownerEmail` and `ownerPassword`. The collection generates throwaway demo values at the start of each run (collection variables `ownerPassword`, `ownerEmailA`, ...). Folder 0 (\"Register then Login\") registers A and B and logs both owners in: the run-time collection variables `tokenA` and `tokenB` hold the tokens (no initial value, never exported). Tenant endpoints are authenticated with `Authorization: Bearer {{tokenA}}` set at collection level; requests of tenant B override it with `{{tokenB}}`, and the requests that test a missing token or the public routes use no authorization. The tenant is read from the token's `tenantId` claim only: no header, path, query or body ever carries it.\n\n**Activation:** organization A is activated in folder 0 through the real tenant route `POST /api/organizations/{id}/activation` with token A. That route exists only while the flag `quine.organization.tenant-activation.enabled` is `true`: docker-compose sets it, and it is `false` (route absent) by default. It is a transitional route for local and team use (T7 PO-1); it must never be enabled in an environment reachable by anyone outside the team, and T9d removes it. Without the flag, the activation requests answer 404 and every later step fails.\n\n**Public routes:** `POST /api/organizations` and `POST /api/auth/login` need no token (and are sent with none: a stale or malformed `Authorization` header is refused even there). Every other route answers 401 `TENANT_NOT_RESOLVED` without a valid token, with the header `WWW-Authenticate: Bearer realm=\"quine-erp\"`.\n\nClients must branch on `code` only. `message` is developer-facing English (T5f).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
     {
-      "name": "0. Setup",
-      "description": "Registers two organizations (tenant A and tenant B) and activates A.\n\nActivation uses the smoke runner's `/smoke/...` endpoint, because the real activate endpoint (T5e) is not built yet.",
+      "name": "0. Register then Login",
+      "description": "Registers two organizations (tenant A and tenant B), logs both owners in (stores the run-time variables `tokenA` and `tokenB`) and activates A through the real tenant route `POST /api/organizations/{id}/activation` with token A.\n\nThe activation route exists only with the flag `quine.organization.tenant-activation.enabled=true` (docker-compose sets it; default `false`, route absent). Local and team use only: see the collection description.",
       "item": [
         {
           "name": "Register organization A (tenant A)",
@@ -120,7 +120,141 @@
           }
         },
         {
-          "name": "Activate A (smoke runner only)",
+          "name": "Login owner A → 200 (stores tokenA)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"tokenType is Bearer and expiresIn is a number of seconds\", () => {",
+                  "  pm.expect(body.tokenType).to.eql(\"Bearer\");",
+                  "  pm.expect(body.expiresIn).to.be.a(\"number\").and.to.be.above(0);",
+                  "});",
+                  "pm.test(\"body is {accessToken, tokenType, expiresIn}\", () => pm.expect(Object.keys(body).sort()).to.eql([\"accessToken\",\"expiresIn\",\"tokenType\"]));",
+                  "// The token is kept in a collection variable set at run time: it has no initial value and is never exported.",
+                  "pm.collectionVariables.set(\"tokenA\", body.accessToken);",
+                  "const claims = JSON.parse(atob(body.accessToken.split(\".\")[1].replace(/-/g, \"+\").replace(/_/g, \"/\")));",
+                  "pm.test(\"tenantId claim is the tenant of the owner, audience is quine-tenant\", () => {",
+                  "  pm.expect(claims.tenantId).to.eql(pm.collectionVariables.get(\"tenantA\"));",
+                  "  // A single audience is serialised as a string, several as an array.",
+                  "  pm.expect([].concat(claims.aud)).to.eql([\"quine-tenant\"]);",
+                  "  pm.expect(claims.exp - claims.iat).to.eql(body.expiresIn);",
+                  "});",
+                  "pm.test(\"no e-mail, password or hash in the token or the response\", () => {",
+                  "  const text = (pm.response.text() + JSON.stringify(claims)).toLowerCase();",
+                  "  pm.expect(text).to.not.include(\"@\");",
+                  "  pm.expect(text).to.not.include(pm.collectionVariables.get(\"ownerPassword\").toLowerCase());",
+                  "  pm.expect(text).to.not.include(\"$2\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{ownerEmailA}}\",\n  \"password\": \"{{ownerPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Login owner B → 200 (stores tokenB)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"tokenType is Bearer and expiresIn is a number of seconds\", () => {",
+                  "  pm.expect(body.tokenType).to.eql(\"Bearer\");",
+                  "  pm.expect(body.expiresIn).to.be.a(\"number\").and.to.be.above(0);",
+                  "});",
+                  "pm.test(\"body is {accessToken, tokenType, expiresIn}\", () => pm.expect(Object.keys(body).sort()).to.eql([\"accessToken\",\"expiresIn\",\"tokenType\"]));",
+                  "// The token is kept in a collection variable set at run time: it has no initial value and is never exported.",
+                  "pm.collectionVariables.set(\"tokenB\", body.accessToken);",
+                  "const claims = JSON.parse(atob(body.accessToken.split(\".\")[1].replace(/-/g, \"+\").replace(/_/g, \"/\")));",
+                  "pm.test(\"tenantId claim is the tenant of the owner, audience is quine-tenant\", () => {",
+                  "  pm.expect(claims.tenantId).to.eql(pm.collectionVariables.get(\"tenantB\"));",
+                  "  // A single audience is serialised as a string, several as an array.",
+                  "  pm.expect([].concat(claims.aud)).to.eql([\"quine-tenant\"]);",
+                  "  pm.expect(claims.exp - claims.iat).to.eql(body.expiresIn);",
+                  "});",
+                  "pm.test(\"no e-mail, password or hash in the token or the response\", () => {",
+                  "  const text = (pm.response.text() + JSON.stringify(claims)).toLowerCase();",
+                  "  pm.expect(text).to.not.include(\"@\");",
+                  "  pm.expect(text).to.not.include(pm.collectionVariables.get(\"ownerPassword\").toLowerCase());",
+                  "  pm.expect(text).to.not.include(\"$2\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{ownerEmailB}}\",\n  \"password\": \"{{ownerPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Activate A (real tenant route, token A; needs the activation flag)",
           "event": [
             {
               "listen": "test",
@@ -135,28 +269,36 @@
           ],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
-              }
-            ],
+            "header": [],
             "url": {
-              "raw": "{{baseUrl}}/smoke/organizations/{{orgA}}/activate",
+              "raw": "{{baseUrl}}/api/organizations/{{orgA}}/activation",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "smoke",
+                "api",
                 "organizations",
                 "{{orgA}}",
-                "activate"
+                "activation"
               ]
             },
-            "description": "Runner-only endpoint. The real activate endpoint (T5e) is blocked on the product-owner decision about who activates."
+            "description": "Real tenant route (T5e), authenticated with token A. It is present only when `quine.organization.tenant-activation.enabled` is `true` (docker-compose). Transitional: T9d removes it.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenA}}",
+                  "type": "string"
+                }
+              ]
+            }
           }
         }
-      ]
+      ],
+      "auth": {
+        "type": "noauth"
+      }
     },
     {
       "name": "1. Register organization — POST /api/organizations",
@@ -532,7 +674,10 @@
             }
           }
         }
-      ]
+      ],
+      "auth": {
+        "type": "noauth"
+      }
     },
     {
       "name": "2. Add store (T5a) — POST /api/organizations/{id}/stores",
@@ -563,10 +708,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
               }
             ],
             "url": {
@@ -612,10 +753,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
               }
             ],
             "url": {
@@ -662,10 +799,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
               }
             ],
             "url": {
@@ -712,10 +845,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantB}}"
               }
             ],
             "url": {
@@ -738,6 +867,16 @@
                   "language": "json"
                 }
               }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenB}}",
+                  "type": "string"
+                }
+              ]
             }
           }
         },
@@ -762,10 +901,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
               }
             ],
             "url": {
@@ -813,10 +948,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
               },
               {
                 "key": "Accept-Language",
@@ -868,10 +999,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
               }
             ],
             "url": {
@@ -919,10 +1046,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
               }
             ],
             "url": {
@@ -992,6 +1115,9 @@
                   "language": "json"
                 }
               }
+            },
+            "auth": {
+              "type": "noauth"
             }
           }
         },
@@ -1016,10 +1142,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantB}}"
               }
             ],
             "url": {
@@ -1042,6 +1164,16 @@
                   "language": "json"
                 }
               }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenB}}",
+                  "type": "string"
+                }
+              ]
             }
           }
         },
@@ -1066,10 +1198,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
               }
             ],
             "url": {
@@ -1122,10 +1250,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
               }
             ],
             "url": {
@@ -1172,10 +1296,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
               }
             ],
             "url": {
@@ -1220,10 +1340,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
               }
             ],
             "url": {
@@ -1270,10 +1386,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
               }
             ],
             "url": {
@@ -1321,10 +1433,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
               }
             ],
             "url": {
@@ -1372,10 +1480,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
               }
             ],
             "url": {
@@ -1422,10 +1526,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantB}}"
               }
             ],
             "url": {
@@ -1448,6 +1548,16 @@
                   "language": "json"
                 }
               }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenB}}",
+                  "type": "string"
+                }
+              ]
             }
           }
         }
@@ -1474,12 +1584,7 @@
           ],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/organizations/{{orgA}}/stores/{{store3}}/deactivation",
               "host": [
@@ -1513,12 +1618,7 @@
           ],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/organizations/{{orgA}}/stores/{{store3}}/deactivation",
               "host": [
@@ -1552,12 +1652,7 @@
           ],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/organizations/{{orgA}}/stores/{{hqA}}/deactivation",
               "host": [
@@ -1595,10 +1690,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
               }
             ],
             "url": {
@@ -1642,12 +1733,7 @@
           ],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/organizations/{{orgA}}/stores/nope/deactivation",
               "host": [
@@ -1681,12 +1767,7 @@
           ],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantB}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/organizations/{{orgA}}/stores/{{store2}}/deactivation",
               "host": [
@@ -1699,6 +1780,16 @@
                 "stores",
                 "{{store2}}",
                 "deactivation"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenB}}",
+                  "type": "string"
+                }
               ]
             }
           }
@@ -1726,12 +1817,7 @@
           ],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantB}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/organizations/{{orgA}}/closure",
               "host": [
@@ -1742,6 +1828,16 @@
                 "organizations",
                 "{{orgA}}",
                 "closure"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenB}}",
+                  "type": "string"
+                }
               ]
             }
           }
@@ -1763,12 +1859,7 @@
           ],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantB}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/organizations/{{orgB}}/closure",
               "host": [
@@ -1779,6 +1870,16 @@
                 "organizations",
                 "{{orgB}}",
                 "closure"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenB}}",
+                  "type": "string"
+                }
               ]
             }
           }
@@ -1800,12 +1901,7 @@
           ],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/organizations/{{orgA}}/closure",
               "host": [
@@ -1837,12 +1933,7 @@
           ],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/organizations/{{orgA}}/closure",
               "host": [
@@ -1878,10 +1969,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
               }
             ],
             "url": {
@@ -1928,10 +2015,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
               }
             ],
             "url": {
@@ -1974,12 +2057,7 @@
           ],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/organizations/{{orgA}}/stores/{{store2}}/deactivation",
               "host": [
@@ -2019,12 +2097,7 @@
           ],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/organizations/{{orgB}}/activation",
               "host": [
@@ -2069,6 +2142,9 @@
                 "{{orgB}}",
                 "activation"
               ]
+            },
+            "auth": {
+              "type": "noauth"
             }
           }
         },
@@ -2090,12 +2166,7 @@
           ],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/organizations/not-a-uuid/activation",
               "host": [
@@ -2127,12 +2198,7 @@
           ],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantA}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/organizations/{{orgA}}/activation",
               "host": [
@@ -2167,12 +2233,7 @@
           ],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantB}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/organizations/{{orgB}}/activation",
               "host": [
@@ -2183,6 +2244,16 @@
                 "organizations",
                 "{{orgB}}",
                 "activation"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenB}}",
+                  "type": "string"
+                }
               ]
             }
           }
@@ -2204,12 +2275,7 @@
           ],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantB}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/organizations/{{orgB}}/activation",
               "host": [
@@ -2220,6 +2286,16 @@
                 "organizations",
                 "{{orgB}}",
                 "activation"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenB}}",
+                  "type": "string"
+                }
               ]
             }
           }
@@ -2244,10 +2320,6 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
-              },
-              {
-                "key": "X-Smoke-Tenant",
-                "value": "{{tenantB}}"
               }
             ],
             "url": {
@@ -2270,141 +2342,25 @@
                   "language": "json"
                 }
               }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenB}}",
+                  "type": "string"
+                }
+              ]
             }
           }
         }
       ]
     },
     {
-      "name": "7. Login (T7b-1) — POST /api/auth/login",
-      "description": "Additive. The login endpoint is public. It issues a token (kept in the run-time collection variables `tokenA` and `tokenB`, which have no initial value) but nothing honours the token yet: tenant endpoints still use the smoke runner until T7b-2. Needs the owners registered by folder 0. The demo password is the one generated at the start of the run.",
+      "name": "7. Login failures and variants (T7b-1) — POST /api/auth/login",
+      "description": "The login endpoint is public (sent with no Authorization header). The two successful logins that store `tokenA` and `tokenB` are in folder 0. These requests need the owners registered there. The demo password is the one generated at the start of the run.",
       "item": [
-        {
-          "name": "Login owner A → 200 (stores tokenA)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
-                  "const body = pm.response.json();",
-                  "pm.test(\"tokenType is Bearer and expiresIn is a number of seconds\", () => {",
-                  "  pm.expect(body.tokenType).to.eql(\"Bearer\");",
-                  "  pm.expect(body.expiresIn).to.be.a(\"number\").and.to.be.above(0);",
-                  "});",
-                  "pm.test(\"body is {accessToken, tokenType, expiresIn}\", () => pm.expect(Object.keys(body).sort()).to.eql([\"accessToken\",\"expiresIn\",\"tokenType\"]));",
-                  "// The token is kept in a collection variable set at run time: it has no initial value and is never exported.",
-                  "pm.collectionVariables.set(\"tokenA\", body.accessToken);",
-                  "const claims = JSON.parse(atob(body.accessToken.split(\".\")[1].replace(/-/g, \"+\").replace(/_/g, \"/\")));",
-                  "pm.test(\"tenantId claim is the tenant of the owner, audience is quine-tenant\", () => {",
-                  "  pm.expect(claims.tenantId).to.eql(pm.collectionVariables.get(\"tenantA\"));",
-                  "  pm.expect(claims.aud).to.eql([\"quine-tenant\"]);",
-                  "  pm.expect(claims.exp - claims.iat).to.eql(body.expiresIn);",
-                  "});",
-                  "pm.test(\"no e-mail, password or hash in the token or the response\", () => {",
-                  "  const text = (pm.response.text() + JSON.stringify(claims)).toLowerCase();",
-                  "  pm.expect(text).to.not.include(\"@\");",
-                  "  pm.expect(text).to.not.include(pm.collectionVariables.get(\"ownerPassword\").toLowerCase());",
-                  "  pm.expect(text).to.not.include(\"$2\");",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "login"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"{{ownerEmailA}}\",\n  \"password\": \"{{ownerPassword}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Login owner B → 200 (stores tokenB)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
-                  "const body = pm.response.json();",
-                  "pm.test(\"tokenType is Bearer and expiresIn is a number of seconds\", () => {",
-                  "  pm.expect(body.tokenType).to.eql(\"Bearer\");",
-                  "  pm.expect(body.expiresIn).to.be.a(\"number\").and.to.be.above(0);",
-                  "});",
-                  "pm.test(\"body is {accessToken, tokenType, expiresIn}\", () => pm.expect(Object.keys(body).sort()).to.eql([\"accessToken\",\"expiresIn\",\"tokenType\"]));",
-                  "// The token is kept in a collection variable set at run time: it has no initial value and is never exported.",
-                  "pm.collectionVariables.set(\"tokenB\", body.accessToken);",
-                  "const claims = JSON.parse(atob(body.accessToken.split(\".\")[1].replace(/-/g, \"+\").replace(/_/g, \"/\")));",
-                  "pm.test(\"tenantId claim is the tenant of the owner, audience is quine-tenant\", () => {",
-                  "  pm.expect(claims.tenantId).to.eql(pm.collectionVariables.get(\"tenantB\"));",
-                  "  pm.expect(claims.aud).to.eql([\"quine-tenant\"]);",
-                  "  pm.expect(claims.exp - claims.iat).to.eql(body.expiresIn);",
-                  "});",
-                  "pm.test(\"no e-mail, password or hash in the token or the response\", () => {",
-                  "  const text = (pm.response.text() + JSON.stringify(claims)).toLowerCase();",
-                  "  pm.expect(text).to.not.include(\"@\");",
-                  "  pm.expect(text).to.not.include(pm.collectionVariables.get(\"ownerPassword\").toLowerCase());",
-                  "  pm.expect(text).to.not.include(\"$2\");",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "login"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"{{ownerEmailB}}\",\n  \"password\": \"{{ownerPassword}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
         {
           "name": "Login owner A, e-mail in upper case and with spaces → 200",
           "event": [
@@ -2729,6 +2685,319 @@
             }
           }
         }
+      ],
+      "auth": {
+        "type": "noauth"
+      }
+    },
+    {
+      "name": "8. Authentication of tenant routes (T7b-2)",
+      "description": "The tenant routes need a valid token. Every refusal is the same 401 `TENANT_NOT_RESOLVED` with the header exactly `Bearer realm=\"quine-erp\"` and no detail on why. A token of tenant A never reaches tenant B's organization: the answer is the 404 of a missing organization. Runs after folder 6, so B is active (the closure requests below never reach it).",
+      "item": [
+        {
+          "name": "No token on a tenant route → 401, exact header",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"code is TENANT_NOT_RESOLVED\", () => pm.expect(pm.response.json().code).to.eql(\"TENANT_NOT_RESOLVED\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));",
+                  "pm.test(\"WWW-Authenticate is exactly Bearer realm=\\\"quine-erp\\\" (no error detail)\", () => pm.expect(pm.response.headers.get(\"WWW-Authenticate\")).to.eql('Bearer realm=\"quine-erp\"'));",
+                  "pm.test(\"no session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgB}}/stores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgB}}",
+                "stores"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeCode\": \"thies-09\",\n  \"storeName\": \"Magasin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "A tenant route without a token. 401 comes before any validation or lookup."
+          }
+        },
+        {
+          "name": "No token and an invalid body → 401, not 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"code is TENANT_NOT_RESOLVED\", () => pm.expect(pm.response.json().code).to.eql(\"TENANT_NOT_RESOLVED\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));",
+                  "pm.test(\"WWW-Authenticate is exactly Bearer realm=\\\"quine-erp\\\" (no error detail)\", () => pm.expect(pm.response.headers.get(\"WWW-Authenticate\")).to.eql('Bearer realm=\"quine-erp\"'));",
+                  "pm.test(\"no session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgB}}/stores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgB}}",
+                "stores"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "401 before 400 on tenant routes."
+          }
+        },
+        {
+          "name": "Basic header → 401, same body and header",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"code is TENANT_NOT_RESOLVED\", () => pm.expect(pm.response.json().code).to.eql(\"TENANT_NOT_RESOLVED\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));",
+                  "pm.test(\"WWW-Authenticate is exactly Bearer realm=\\\"quine-erp\\\" (no error detail)\", () => pm.expect(pm.response.headers.get(\"WWW-Authenticate\")).to.eql('Bearer realm=\"quine-erp\"'));",
+                  "pm.test(\"no session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgB}}/stores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgB}}",
+                "stores"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "nobody",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "not-a-credential",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeCode\": \"thies-09\",\n  \"storeName\": \"Magasin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "HTTP Basic is not offered: the answer is the same 401 with the Bearer header only."
+          }
+        },
+        {
+          "name": "Forged token (unsigned, built at run time) → 401, same body and header",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// An unsigned token built here from the collection's own variables: no key, no secret.",
+                  "const b64 = s => btoa(s).replace(/=+$/, '').replace(/\\+/g, '-').replace(/\\//g, '_');",
+                  "const exp = Math.floor(Date.now() / 1000) + 600;",
+                  "pm.variables.set('forgedToken', b64('{\"alg\":\"none\"}') + '.' + b64(JSON.stringify({sub: 'x', tenantId: pm.collectionVariables.get('tenantB'), aud: ['quine-tenant'], exp: exp})) + '.');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"code is TENANT_NOT_RESOLVED\", () => pm.expect(pm.response.json().code).to.eql(\"TENANT_NOT_RESOLVED\"));",
+                  "pm.test(\"error body is {code, message, timestamp}\", () => pm.expect(Object.keys(pm.response.json()).sort()).to.eql([\"code\",\"message\",\"timestamp\"]));",
+                  "pm.test(\"WWW-Authenticate is exactly Bearer realm=\\\"quine-erp\\\" (no error detail)\", () => pm.expect(pm.response.headers.get(\"WWW-Authenticate\")).to.eql('Bearer realm=\"quine-erp\"'));",
+                  "pm.test(\"no session cookie\", () => pm.expect(pm.response.headers.has(\"Set-Cookie\")).to.eql(false));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{forgedToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgB}}/stores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgB}}",
+                "stores"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeCode\": \"thies-09\",\n  \"storeName\": \"Magasin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "A token that claims tenant B but is not signed with the server key."
+          }
+        },
+        {
+          "name": "Token A on B's organization → 404 (stores the message)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"code is ORGANIZATION_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_NOT_FOUND\"));",
+                  "// The message names the requested id and nothing else: keep it with the id masked.",
+                  "pm.collectionVariables.set(\"crossTenantMessage\", pm.response.json().message.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, \"<id>\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{orgB}}/closure",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{orgB}}",
+                "closure"
+              ]
+            },
+            "description": "Token A (collection level) on the organization of tenant B: it looks exactly like a missing organization. Nothing of B is touched."
+          }
+        },
+        {
+          "name": "Token A on a missing organization → 404, same code and message",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"code is ORGANIZATION_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"ORGANIZATION_NOT_FOUND\"));",
+                  "pm.test(\"message is the one of the foreign organization, apart from the id\", () => {",
+                  "  pm.expect(pm.response.json().message.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, \"<id>\")).to.eql(pm.collectionVariables.get(\"crossTenantMessage\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/organizations/{{$randomUUID}}/closure",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organizations",
+                "{{$randomUUID}}",
+                "closure"
+              ]
+            }
+          }
+        }
       ]
     }
   ],
@@ -2800,6 +3069,20 @@
     {
       "key": "loginFailureMessage",
       "value": ""
+    },
+    {
+      "key": "crossTenantMessage",
+      "value": ""
     }
-  ]
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{tokenA}}",
+        "type": "string"
+      }
+    ]
+  }
 }
