@@ -1,6 +1,6 @@
 # T9: Platform administration: validate, suspend and reinstate organizations
 
-- **Status:** drafted by the BA against `main` (2026-11-08). Product owner decisions 1-4 recorded on 2026-11-08 (table below). **Architect: validated with changes (2026-11-08, checked against the code). The changes are in "Architect validation" below and prevail over any earlier section that disagrees.** **Slice T9a is blocked on a product-owner decision (see T9a), but that decision no longer blocks T9b.** **Product-owner round 2 recorded on 2026-11-08 (section "Product-owner decisions, round 2"): it supersedes decision 3c, answers the old P2 to P6 and leaves T9a unchanged. New slices T9e to T9h. Precedence when sections disagree: round 2, then "Architect validation", then the older text. Architect validation of the round 2 additions: validated with changes (2026-11-08, checked against commit 408adc9), see "Architect validation, round 2", which prevails over the round 2 text where they differ.** Technical constraints in "Constraints to validate" are formulated as proposals for the Architect, not decisions.
+- **Status:** drafted by the BA against `main` (2026-11-08). Product owner decisions 1-4 recorded on 2026-11-08 (table below). **Architect: validated with changes (2026-11-08, checked against the code). The changes are in "Architect validation" below and prevail over any earlier section that disagrees.** **Slice T9a is blocked on a product-owner decision (see T9a), but that decision no longer blocks T9b.** **Product-owner round 2 recorded on 2026-11-08 (section "Product-owner decisions, round 2"): it supersedes decision 3c, answers the old P2 to P6 and leaves T9a unchanged. New slices T9e to T9h. Precedence when sections disagree: round 2, then "Architect validation", then the older text. Architect validation of the round 2 additions: validated with changes (2026-11-08, checked against commit 408adc9), see "Architect validation, round 2", which prevails over the round 2 text where they differ.** **Product-owner round 3 recorded on 2026-11-08 ("Product-owner decisions, round 3"): PO-1 to PO-10 are all answered; only T9a stays open. T9g is unblocked.** Technical constraints in "Constraints to validate" are formulated as proposals for the Architect, not decisions.
 - **Workflow:** BA → Architect → Developer → Lead Developer (see `CLAUDE.md`).
 - **Sources:**
   - `identity-T7.md` (out of scope: "A platform-admin identity and the platform path for activate, close, suspend and reinstate (T9)"; T7b login and JWT)
@@ -465,6 +465,26 @@ Order: `T9g` (any time) → `T7b-0` → `T7b` → `T9b` → `T9a` (implementatio
 - The status guard adds one read per tenant request in future modules; no cache, because a suspension must be immediate.
 - `GET /api/organization` must be exempt from the guard, otherwise a suspended tenant cannot learn its status.
 - A `REJECTED` organization keeps its unique `tenant_id` and its stores; no purge is planned.
+
+## Product-owner decisions, round 3 (2026-11-08)
+
+The PO answered the round 2 questions by accepting the recommendations. **These decisions close PO-1 to PO-10 and prevail over the earlier text.** Everything not listed here stays as in the round 2 sections and the Architect validations.
+
+| # | Question | Decision |
+|---|---|---|
+| PO-1 | Can a suspended tenant close its organization? | **No: refused with `ORGANIZATION_SUSPENDED`**, consistent with "a suspended tenant can do nothing". Accepted consequence: a suspended tenant cannot withdraw and its legal name stays locked until the platform reinstates it (platform closure is a later ticket). The closable set becomes `{ACTIVE}`. T5d ("closable from `SUSPENDED`") is superseded. T9g names this behaviour change (closing from `SUSPENDED` goes from 200 to 409). Criterion D8 is no longer provisional. |
+| PO-2 | Reasons | **Mandatory for suspension and rejection, 500 characters maximum.** None for activation or reinstatement. |
+| PO-3 | Who reads the audit | **Record now (T9f), read later** through a platform-only route in a separate ticket. Until then there is no read route. |
+| PO-4 / PO-8 | Login and re-registration after a refusal | **The Architect's choice is kept:** the legal name is released after a rejection, the owner's e-mail stays locked, and the owner of a `REJECTED` (and of a `PENDING_ACTIVATION`) organization can log in to see the dedicated message. No change in `identity`. Accepted cost: a customer who mistyped the e-mail cannot re-register with it. Confirmed: there is no external client for the changed codes. |
+| PO-5 | Who writes the customer-facing text | **The front end**, from the `code`. The server keeps `message` as developer-facing English; no server-supplied customer text. The `endpoints-T5.md` convention is unchanged. |
+| PO-6 | Dedicated codes for `SUSPENDED` and `REJECTED` | Confirmed (recommendation accepted): dedicated codes for the three states, `CLOSED` unchanged. |
+| PO-7 | Rejection | **Final, no undo.** (The partial unique index on the legal name relies on this.) |
+| PO-9 | Tenant read while suspended | **`GET /api/organization` answers even when the organization is `SUSPENDED`**, so the client can learn its status; it is the explicit exception to "a suspended tenant can do nothing". Other future reads are refused like actions. |
+| PO-10 | Reason and owner e-mail visibility | **The tenant does not see the suspension or rejection reason in this ticket** (only the code). Every platform administrator may see the owner's e-mail in the platform list. |
+
+Still open and unchanged: **T9a** (how the first platform administrator is created; the PO asked for no change for now). Every other PO question of the earlier rounds is answered.
+
+Effect on slices: **T9g is unblocked** (PO-1, PO-5 and PO-6 were its only dependencies) and is the first slice to implement. T9e keeps its dependency on the other slices only.
 
 ## Open questions
 
