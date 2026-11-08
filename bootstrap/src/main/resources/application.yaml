@@ -5,6 +5,9 @@ spring:
     # No default: export QUINE_DB_PASSWORD (see CLAUDE.md).
     password: ${QUINE_DB_PASSWORD}
   jpa:
+    # No Hibernate session bound to the request: it could hold a connection
+    # while BCrypt works (login).
+    open-in-view: false
     hibernate:
       ddl-auto: validate
 

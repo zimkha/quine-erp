@@ -11,7 +11,8 @@ public final class TenantNotResolvedException extends RuntimeException {
 
   public static final String CODE = "TENANT_NOT_RESOLVED";
 
-  static final String MESSAGE =
+  /** Public so that a servlet filter can write the same text (T7b-2). */
+  public static final String MESSAGE =
       "The tenant of the current request could not be resolved";
 
   public TenantNotResolvedException() {
