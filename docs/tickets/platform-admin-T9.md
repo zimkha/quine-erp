@@ -1,6 +1,6 @@
 # T9: Platform administration: validate, suspend and reinstate organizations
 
-- **Status:** drafted by the BA against `main` (2026-11-08). Product owner decisions 1-4 recorded on 2026-11-08 (table below). **Architect: validated with changes (2026-11-08, checked against the code). The changes are in "Architect validation" below and prevail over any earlier section that disagrees.** **Slice T9a is blocked on a product-owner decision (see T9a), but that decision no longer blocks T9b.** Technical constraints in "Constraints to validate" are formulated as proposals for the Architect, not decisions.
+- **Status:** drafted by the BA against `main` (2026-11-08). Product owner decisions 1-4 recorded on 2026-11-08 (table below). **Architect: validated with changes (2026-11-08, checked against the code). The changes are in "Architect validation" below and prevail over any earlier section that disagrees.** **Slice T9a is blocked on a product-owner decision (see T9a), but that decision no longer blocks T9b.** **Product-owner round 2 recorded on 2026-11-08 (section "Product-owner decisions, round 2"): it supersedes decision 3c, answers the old P2 to P6 and leaves T9a unchanged. New slices T9e to T9h. Precedence when sections disagree: round 2, then "Architect validation", then the older text. Architect validation of the round 2 additions: pending.** Technical constraints in "Constraints to validate" are formulated as proposals for the Architect, not decisions.
 - **Workflow:** BA → Architect → Developer → Lead Developer (see `CLAUDE.md`).
 - **Sources:**
   - `identity-T7.md` (out of scope: "A platform-admin identity and the platform path for activate, close, suspend and reinstate (T9)"; T7b login and JWT)
@@ -19,7 +19,7 @@ As a platform administrator, I want to review newly registered organizations and
 |---|---|---|
 | 1 | Who activates an organization | **Activation is a validation by the platform, no longer an action of the customer.** Registered organizations stay `PENDING_ACTIVATION` until the platform validates them. This **supersedes** the 2026-10-01 decision of `endpoints-T5.md` (T5e: "the tenant activates"). |
 | 2 | Edits after registration | **Deferred, out of scope:** renaming the organization or a store, changing the legal name, changing the currency, reactivating a store. Listed under "Out of scope". |
-| 3 | The blocking point | A `PENDING_ACTIVATION` organization can neither add a store, nor change headquarters, nor deactivate a store (the `OrganizationMustBeActiveTo...Rule` classes), so a new customer can do nothing before validation. **Lifted by this recommendation, recorded as a decision:** (a) the tenant endpoint `POST /api/organizations/{id}/activation` is **removed in T9** (not earlier, so the module is never left without any activation path), and its tenant-side handler and command are replaced by the platform version; (b) until T9, the shortcut `/smoke/organizations/{id}/activate` is the only way to activate locally, restricted to local profiles by the T7a startup guard; (c) the `PENDING_ACTIVATION` state must be explicit to the customer: the tenant endpoints refused in `PENDING_ACTIVATION` **keep their existing 409 codes, no contract change**. |
+| 3 | The blocking point | A `PENDING_ACTIVATION` organization can neither add a store, nor change headquarters, nor deactivate a store (the `OrganizationMustBeActiveTo...Rule` classes), so a new customer can do nothing before validation. **Lifted by this recommendation, recorded as a decision:** (a) the tenant endpoint `POST /api/organizations/{id}/activation` is **removed in T9** (not earlier, so the module is never left without any activation path), and its tenant-side handler and command are replaced by the platform version; (b) until T9, the shortcut `/smoke/organizations/{id}/activate` is the only way to activate locally, restricted to local profiles by the T7a startup guard; (c) the `PENDING_ACTIVATION` state must be explicit to the customer: the tenant endpoints refused in `PENDING_ACTIVATION` **keep their existing 409 codes, no contract change**. **Superseded by PO 2026-11-08 (round 2), P6: they now answer a dedicated code, see "Dedicated refusal codes".** |
 | 4 | How the first platform administrator is created | **Not decided in T9.** Isolated in sub-ticket **T9a**, marked "to be decided by the PO before implementation". Self-registration is excluded (anyone could validate themselves). |
 
 ## Current state
@@ -255,6 +255,164 @@ No request body (any body sent is ignored). A malformed `{id}` gives 400. 404 `O
 7. **Secrets (T9a):** environment variables only, including compose and the Postman environment file (no values committed).
 8. **Documentation:** `CLAUDE.md` (smoke description; Conventions: second identity kind, platform zone, the cross-tenant read exception), `endpoints-T5.md` (T5e superseded, readiness table).
 
+## Product-owner decisions, round 2 (2026-11-08)
+
+Drafted by the BA against the code. Alignment with older text: the criterion "Customer sees the pending state (decision 3c)" is replaced by D1 to D18 below; in the criterion "Suspend", "closing is still allowed" and "answer their existing 409 'must be active' codes" no longer hold (see PO-1 and the dedicated codes); "Rejecting or refusing a registration" and "Effect of suspension on login" leave "Out of scope" (see "Out of scope, revised"); the risks "No audit trail" and "Blocking point not fully removed" are replaced by the risks below; the old open questions P2 to P6 are answered and closed, P1 stays as is; the listing item becomes `{organizationId, organizationName, legalName, currencyCode, status, ownerEmail, createdAt}` (no `tenantId`) and its `status` filter accepts `REJECTED`, so the pinned text becomes `status: must be one of [PENDING_ACTIVATION, ACTIVE, SUSPENDED, CLOSED, REJECTED]`.
+
+| # | Question | PO answer (translated) | Decision recorded |
+|---|---|---|---|
+| P1 | First platform administrator (T9a) | "No need for a change for the moment." | **T9a is unchanged and still undecided.** The option stays "to be decided by the PO before implementation". The sub-questions "forced password change at first login" and "audit of the creation" are **not asked for now**. |
+| P2 | Refusing a registration | "A real outcome." | A refusal is a **result in its own right**, distinct from "not yet validated": a new final status `REJECTED`, reached by a platform rejection of a `PENDING_ACTIVATION` organization. |
+| P3 | Audit | "Yes, the platform must record and trace the validation and suspension actions." | The platform records **who** validated and who suspended (and, by extension, who reinstated and who rejected), **when**, on **which organization**, and a **reason** where relevant (suspension, rejection). Storage is the Architect's call; who can read it is a PO question (PO-3). |
+| P4 | Data shown to the validator | "Only the owner's e-mail must appear, no need for the tenantId." | The platform listing shows `ownerEmail` and **no `tenantId`**. The e-mail lives in `identity` and the list in `organization`: see "Owner e-mail in the list". |
+| P5 | Suspended tenant | "Yes, users can log in; they will not be able to do anything when a tenant is suspended." | Login stays possible. **Every tenant action is refused while the organization is `SUSPENDED`.** Inconsistency to settle: the ticket said the tenant may still close from `SUSPENDED` (`OrganizationMustBeClosableRule`); see PO-1. |
+| P6 | Message to the customer | "We need a proper business and customer message to say that the customer is waiting for a validation." | **Reverses decision 3c.** A tenant action on a `PENDING_ACTIVATION` organization gets a dedicated code and message. By consistency (BA proposal, PO-6), the same for `SUSPENDED` and `REJECTED`. Tension with the `endpoints-T5.md` convention: see PO-5. |
+
+### Rejection (new status `REJECTED`)
+
+`OrganizationStatus` gains `REJECTED`, a **final** state (BA proposal, PO-7): no activation, suspension, reinstatement or closure leaves it. The `ck_organizations_status` CHECK is extended by a new migration. Only the platform rejects, and only a `PENDING_ACTIVATION` organization (a suspended or active customer is not "refused": suspension is the tool).
+
+Endpoint (proposal): `POST /api/platform/organizations/{id}/rejection`, body `{"reason": "<text>"}`, 200 `{organizationId, status:"REJECTED", rejectedAt}` (no `tenantId`). Same step order as the other platform actions.
+
+| Status of the organization | Result |
+|---|---|
+| `PENDING_ACTIVATION` | 200 `REJECTED` |
+| `REJECTED` (repeat) | 409 `ORGANIZATION_ALREADY_REJECTED` |
+| `ACTIVE`, `SUSPENDED`, `CLOSED` | 409 `ORGANIZATION_CANNOT_BE_REJECTED` |
+| missing | 404 `ORGANIZATION_NOT_FOUND` |
+
+The rule (proposed name `OrganizationMustBePendingToBeRejectedRule`) switches on status, as the activate and reinstate rules do. From `REJECTED`, activate gives `ORGANIZATION_CANNOT_BE_ACTIVATED`, suspend `ORGANIZATION_CANNOT_BE_SUSPENDED`, reinstate `ORGANIZATION_CANNOT_BE_REINSTATED`, tenant actions `ORGANIZATION_REJECTED`. Event `OrganizationRejected` with the aggregate's tenant; the BA recommends it does **not** carry the reason (events go to consumers; the reason stays in the audit journal), see A-3.
+
+Consequences the PO has not stated are in the open questions: whether a rejected organization keeps its legal name locked (global unique constraint, as `CLOSED` does today), whether the owner keeps their e-mail locked (`EMAIL_ALREADY_EXISTS` is platform-wide), whether the owner can log in and what they see, whether the tenant sees the reason, whether a rejection can be undone.
+
+### Reason on suspension
+
+`POST /api/platform/organizations/{id}/suspension` now takes a body `{"reason": "<text>"}` (the endpoint does not exist yet, so nothing breaks). Activation and reinstatement stay body-less. The reason is required, non-blank, with a maximum length (BA proposal: 500, PO-2), validated with constraint types that have a pinned text, never echoed. It is stored in the audit journal, never logged in clear, and not returned in responses or in the listing.
+
+### Dedicated refusal codes on the tenant side (reverses 3c)
+
+When an organization is not `ACTIVE`, tenant actions answer a **status-specific** code instead of the generic "must be active" code (names to be confirmed by the Architect):
+
+| Organization status | New code | Business meaning |
+|---|---|---|
+| `PENDING_ACTIVATION` | `ORGANIZATION_PENDING_VALIDATION` | The registration is waiting for the platform's validation; the customer must wait. |
+| `SUSPENDED` | `ORGANIZATION_SUSPENDED` | The organization is suspended by the platform. |
+| `REJECTED` | `ORGANIZATION_REJECTED` | The registration was refused by the platform. |
+| `CLOSED` | unchanged (existing generic codes) | Out of this ticket. |
+
+These are **refusals from the current status, never "target state reached"**. They stay HTTP 409 (rule family); not 401 or 403, because the user is authenticated and allowed to act in general (Architect confirms).
+
+| Tenant endpoint | `PENDING_ACTIVATION` | `SUSPENDED` | `REJECTED` | `CLOSED` |
+|---|---|---|---|---|
+| `POST /api/organizations/{id}/stores` | was `ORGANIZATION_MUST_BE_ACTIVE_TO_ADD_STORE`; **`ORGANIZATION_PENDING_VALIDATION`** | **`ORGANIZATION_SUSPENDED`** | `ORGANIZATION_REJECTED` | unchanged generic |
+| `PUT /api/organizations/{id}/headquarters` | was `..._TO_CHANGE_HEADQUARTERS`; **`ORGANIZATION_PENDING_VALIDATION`** | **`ORGANIZATION_SUSPENDED`** | `ORGANIZATION_REJECTED` | unchanged generic |
+| `POST /api/organizations/{id}/stores/{storeId}/deactivation` | was `..._TO_DEACTIVATE_STORE`; **`ORGANIZATION_PENDING_VALIDATION`** | **`ORGANIZATION_SUSPENDED`** | `ORGANIZATION_REJECTED` | unchanged generic |
+| `POST /api/organizations/{id}/closure` | was `ORGANIZATION_CANNOT_BE_CLOSED`; **`ORGANIZATION_PENDING_VALIDATION`** | was allowed (200); **BA recommendation: `ORGANIZATION_SUSPENDED`** (PO-1) | `ORGANIZATION_REJECTED` | unchanged `ORGANIZATION_ALREADY_CLOSED` |
+
+Notes: registration is public and unaffected; the tenant activation route is removed by T9; there is no tenant read endpoint today, so no read is refused (PO-9, A-5). Step order is unchanged: request validation (400), tenant (401), ownership (404; another tenant's organization stays an indistinguishable 404, never a dedicated code), value objects (422), then rules (409), where the dedicated status code is the **first** business rule. This changes the contract of the three "must be active" codes for non-closed statuses; the Architect assumes no external client (T7 decision 13), the PO confirms (PO-8).
+
+### Audit (P3)
+
+Traced for each platform action: admin id, action (`ACTIVATED`, `REJECTED`, `SUSPENDED`, `REINSTATED`), organization id, timestamp (`ClockProvider`), reason (suspension and rejection only); the tenant id may be stored (it comes from the aggregate). The admin's e-mail is **not** copied (id only). Where: actor on events (schema change, and the reason becomes a leak vector), a persistent append-only journal written in the same transaction, or both (A-2). BA leaning: the journal is the source of truth. **Hard requirement:** no validation, rejection, suspension or reinstatement succeeds without its trace, and no trace exists for an action that did not happen. Who can read it: PO-3; until decided, T9f only records.
+
+### Owner e-mail in the list (P4), problem for the Architect
+
+The list is served by `organization`; the owner's e-mail is held by `identity`; the two never reference each other (only `bootstrap` knows both). `RegisterOrganizationCommand` has no `ownerEmail` yet (T7c is not merged and adds it).
+
+| Option | Idea | For | Against / risk |
+|---|---|---|---|
+| A. Copy at registration | `organization` stores `owner_email` from the registration command. | One local query, no runtime dependency on `identity`. | Duplicated personal datum in two schemas; stale if the e-mail ever changes; rectification and erasure hit two places; must roll back together with owner creation; never put it in `OrganizationRegistered`. |
+| B. Composition in `bootstrap` | A platform query in `bootstrap` reads the page, then the owners' e-mails from `identity` by tenant. | Single source of truth, fresh. | The join key `tenantId` must be in the internal projection though not in the HTTP response; new `identity` query port; reads not atomic; null e-mail if the owner row is missing; the controller would live in `bootstrap` and lose the `ApiExceptionHandler` scoping. |
+| C. Port in `organization`, adapter in `bootstrap` | `organization` declares a driven port (e.g. `OwnerContactLookup`: tenant ids in, e-mails out), `bootstrap` implements it through `identity`. | As B, and the controller stays in `organization`. | As B; the adapter must exist in every deployment, so a missing one must fail at startup. |
+
+BA leaning (not a decision): **C**, provided the PO accepts "no sorting or filtering on e-mail". If A is chosen, it must be decided **before T7c merges**. Privacy: every platform admin sees the e-mail of anyone who registers, including those later refused; the e-mail must not appear in logs, error messages, the audit journal or events.
+
+### Acceptance criteria, round 2
+
+**Listing and platform actions**
+- **L1:** Given a `PENDING_ACTIVATION` organization whose owner registered with an e-mail, when a platform admin lists `status=PENDING_ACTIVATION`, then the item carries `ownerEmail` and **no `tenantId`** field.
+- **L2:** `status=REJECTED` is accepted; an unknown status is 400 `VALIDATION_FAILED` with the updated pinned text.
+- **L3:** an organization whose owner cannot be found is listed with a null `ownerEmail` (display rule: A-1).
+- **S1:** suspending an `ACTIVE` organization with a reason gives 200 `SUSPENDED`, publishes `OrganizationSuspended` with the aggregate's tenant, and traces the reason. A missing, blank or too long reason is 400 and nothing changes.
+- **S2:** a repeat gives 409 `ORGANIZATION_ALREADY_SUSPENDED`; `PENDING_ACTIVATION`, `REJECTED` or `CLOSED` gives 409 `ORGANIZATION_CANNOT_BE_SUSPENDED`.
+- **R1:** rejecting a `PENDING_ACTIVATION` organization with a reason gives 200 `REJECTED`, publishes `OrganizationRejected` with the aggregate's tenant, and traces action and reason.
+- **R2:** a repeat gives 409 `ORGANIZATION_ALREADY_REJECTED`; `ACTIVE`, `SUSPENDED` or `CLOSED` gives 409 `ORGANIZATION_CANNOT_BE_REJECTED`, status unchanged.
+- **R3:** a rejection without a valid reason is 400; a missing organization is 404; without a platform token it is 401 `AUTHENTICATION_REQUIRED`.
+- **R4:** a `REJECTED` organization cannot be activated, suspended or reinstated and stays `REJECTED`.
+- **A1:** activation and reinstatement are unchanged, except that each is traced.
+- **A2:** two platform actions racing on the same version: the second gets 409 `CONCURRENT_MODIFICATION`.
+
+**Dedicated codes on tenant endpoints** (one scenario per cell of the table; may be parametrized)
+- **D1 to D4:** on a `PENDING_ACTIVATION` organization, add store, change headquarters, deactivate store and close each answer 409 `ORGANIZATION_PENDING_VALIDATION`, the organization is unchanged.
+- **D5 to D8:** same four on a `SUSPENDED` organization answer 409 `ORGANIZATION_SUSPENDED`. **D8 (closure) is provisional until PO-1**: if the PO keeps closing allowed, closure returns 200 and `OrganizationMustBeClosableRule` is unchanged.
+- **D9 to D12:** same four on a `REJECTED` organization answer 409 `ORGANIZATION_REJECTED`.
+- **D13:** on a `CLOSED` organization the existing codes are unchanged.
+- **D14:** another tenant's organization, in any status, is still the same 404 as a missing one; dedicated codes are never returned to another tenant.
+- **D15:** none of the three dedicated codes is in the "target state already reached" list of `endpoints-T5.md`.
+- **D16:** the owner of a `SUSPENDED` organization can still log in; login for `PENDING_ACTIVATION` and `REJECTED` follows PO-4.
+- **D17:** after the platform activates, the action that answered `ORGANIZATION_PENDING_VALIDATION` succeeds.
+- **D18:** after reinstatement, the action that answered `ORGANIZATION_SUSPENDED` succeeds.
+
+**Audit**
+- **U1:** after a validation, rejection, suspension or reinstatement, one trace exists (admin id, action, organization id, timestamp, and reason where applicable).
+- **U2:** a refused action (400, 401, 404, 409) leaves no trace.
+- **U3:** if the state change cannot be saved no trace remains, and the reverse.
+- **U4:** a trace cannot be modified or deleted through the application.
+- **U5:** no password, token or secret appears in any trace or log; the owner e-mail appears in no trace.
+
+**Message**
+- **M1:** the error body keeps `ApiErrorResponse {code, message, timestamp}`; `message` is developer-facing English for the three codes. The customer-facing text depends on PO-5.
+
+### Business rules, round 2
+
+- A registered organization stays `PENDING_ACTIVATION` until the platform validates **or rejects** it.
+- Only a `PENDING_ACTIVATION` organization can be rejected. `REJECTED` is final (subject to PO-7).
+- A rejection and a suspension require a reason; activation and reinstatement do not (subject to PO-2).
+- While an organization is not `ACTIVE`, no tenant action on it succeeds, and the tenant is told **why** with a status-specific code.
+- A user of a non-active organization can still log in (suspended: P5; the others: PO-4); login grants no organization action.
+- Tenant closure is allowed only from `ACTIVE` (BA recommendation, PO-1).
+- Every platform action (validate, reject, suspend, reinstate) is traced with its author, time, organization and reason where applicable; none succeeds without its trace.
+- The platform listing shows the owner's e-mail and never the tenant id.
+- `ORGANIZATION_ALREADY_REJECTED` is a repeat; `ORGANIZATION_CANNOT_BE_REJECTED` is a refusal from the current status; the three `ORGANIZATION_<STATE>` codes are refusals, not repeats.
+
+### Out of scope, revised
+
+Removed from "Out of scope": "Rejecting or refusing a registration" and "Effect of suspension on login or on other modules". Added: a UI or notification for the customer (the client renders the business text per code, PO-5); reading the audit journal unless the PO says otherwise (PO-3); undoing a rejection and a tenant "withdraw my registration" action; showing the suspension or rejection reason to the tenant or in the list; sorting or filtering the list by owner e-mail; a tenant read endpoint telling the client the organization status without attempting an action (A-5); platform closure of a suspended organization; changing the owner's e-mail.
+
+### Files and docs that change or break, round 2
+
+- `OrganizationStatus` (`REJECTED`), `Organization.reject(...)`, `OrganizationRejected`, `OrganizationMustBePendingToBeRejectedRule` and its test.
+- `OrganizationMustBeActiveToAddStoreRule`, `...ToChangeHeadquartersRule`, `...ToDeactivateStoreRule`, `OrganizationMustBeClosableRule` and their tests, `OrganizationTest`, handler tests and the four related `*EndToEndIT` classes (expected codes change for `PENDING_ACTIVATION` and `SUSPENDED`); `REJECTED` cases in the activate, suspend and reinstate rule tests.
+- New `organization` migration: extend `ck_organizations_status`; depending on PO-8, the unique index on `normalized_legal_name`, `existsByLegalName` and the `DATA_INTEGRITY_VIOLATION` mapping in `OrganizationRepositoryAdapter`.
+- Suspend command, handler, result and request gain `reason`; new `RejectOrganization*` classes; wiring in `OrganizationConfiguration`.
+- Audit: journal table and port, and a "current platform admin" provider for the platform controller (not the tenant provider), covered by the guard test.
+- `OrganizationSummary` gains `ownerEmail`; an `identity` query port and `bootstrap` adapter wiring for options B or C; the registration command and migration for option A.
+- `ApiExceptionHandler` needs no new handler for the rule codes; the parameter-mismatch message (A6) lists `REJECTED`; `FieldErrorMessages` for `reason`.
+- Docs: `endpoints-T5.md` (the three dedicated codes and the `REJECTED` codes in the code lists, a new family `ORGANIZATION_<STATE>` = refusal, T5d closable statuses, T5e superseded), `CLAUDE.md` (Errors convention, platform zone, audit), `validation-message-locale.md` (pinned texts for `reason` and the `status` enum), `identity-T7.md` (T7c `ownerEmail` if option A, login of non-active tenants), `domain-activate-reinstate-split.md` (status diagram), and the Postman collection (reject, suspend with reason, the tenant refusal scenarios; no values committed).
+
+### Risks, round 2 (replace "No audit trail" and "Blocking point not fully removed")
+
+- **Audit journal integrity:** append-only (no update or delete from the application, restricted DB grants), written in the same transaction as the state change, one trace per effective action and not per attempt. Without it the PO's requirement is not met.
+- **Audit and personal data:** the reason is free text and may hold personal or commercial data: cap the length, do not log it, restrict reading, define retention; do not copy the admin or owner e-mail into the journal.
+- **Owner e-mail visible to the platform:** a personal datum of people who may never become customers; restrict it to the platform zone and keep it out of logs, events, errors and the audit. A copy (option A) multiplies the places to protect and rectify.
+- **Rejected registrations hold unique values:** if `REJECTED` keeps the legal name and e-mail locked, a customer with a typo cannot register again; releasing them complicates uniqueness and login (PO-8).
+- **Dedicated codes leak the state:** limited to a tenant's own organization; the 404 rule for other tenants stays.
+- **Contract change:** the three "must be active" codes change meaning for non-closed statuses (no external client assumed).
+- **The gate is organization-only today:** other modules do not exist yet; "a suspended tenant can do nothing" holds only for organization endpoints until a cross-module mechanism exists (A-5).
+- **A suspended tenant cannot withdraw** (if PO-1 is answered "refuse"): until a platform closure exists, the organization keeps its legal name.
+- **The customer cannot learn the status without trying an action** (A-5).
+- **Delivery size:** rejection and audit would make T9c+T9d too large, hence separate slices.
+
+### Slicing, round 2
+
+- **T9e: Reject a registration.** Status `REJECTED`, `reject()` with rule, event and migration, `POST /api/platform/organizations/{id}/rejection` with reason, the `REJECTED` list filter, the tenant `ORGANIZATION_REJECTED` code. Depends on T9b, T9f and PO-2, PO-3, PO-4, PO-7.
+- **T9f: Platform audit.** The "current platform admin" port, the journal, the same-transaction write, entries for validate, suspend and reinstate (rejection adds its own in T9e). Depends on T9b and A-2. Part of the **same delivery** as T9c+T9d: no unaudited platform action may reach a real environment.
+- **T9g: Dedicated tenant refusal codes for `PENDING_ACTIVATION` and `SUSPENDED`.** Rule changes, tests, `endpoints-T5.md`, Postman. It touches only domain rules, so it is **mergeable at any time**, independently of T7b and T9b, and recommended before T9c+T9d (when tenants lose self-activation their message must already be right). The `REJECTED` branch joins in T9e. Depends on PO-1, PO-5, PO-6.
+- **T9h: Owner e-mail in the platform list.** Depends on A-1. Option A must land **before T7c merges**; options B or C after T7a and before the T9c+T9d delivery.
+- T9c keeps its scope (list, activate, suspend with reason, reinstate); the suspension reason belongs to T9c because that is where the endpoint is created.
+
+Order: `T9g` (any time) → `T7b-0` → `T7b` → `T9b` → `T9a` (implementation, still undecided) → `T9h` → `T9f` → **`T9c + T9d` as one delivery** → `T9e` (BA recommends the same release or immediately after, and before any real deployment, otherwise refused registrations stay in the pending queue). Dependencies: T9f needs T9b; T9c needs T9f and T9h; T9e needs T9f, T9c and the migration; T9g needs none.
+
 ## Open questions
 
 **Product owner**
@@ -273,3 +431,27 @@ No request body (any body sent is ignored). A malformed `{id}` gives 400. 404 `O
 - A5. Repeated suspension: add `ORGANIZATION_ALREADY_SUSPENDED` (changes the existing rule, as T5e-0 did for activation) or keep `ORGANIZATION_CANNOT_BE_SUSPENDED`. The BA recommends adding it, to follow the repeat convention.
 - A6. Pagination validation: pin texts for `page` / `size` (T6 rules for request parameters, `HandlerMethodValidationException`) or validate explicitly; extension of the malformed-parameter message beyond UUIDs.
 - A7. Whether the shared web component extraction (T6) is triggered by the platform zone, and the fate of the `/smoke/.../activate` shortcut after T9d.
+
+### Open questions, round 2 (each with the BA recommendation)
+
+The old P2 to P6 above are answered by round 2 and closed; P1 (T9a) stays open.
+
+**Product owner**
+- **PO-1 (suspension and closure).** "Do nothing" while suspended: does it also forbid the tenant to close its organization? Today `OrganizationMustBeClosableRule` accepts `SUSPENDED`. Recommendation: refuse (`ORGANIZATION_SUSPENDED`), consistent with "nothing". Impact to accept: a suspended tenant cannot withdraw and its legal name stays locked until the platform reinstates it (platform closure is a later ticket).
+- **PO-2 (reasons).** Is the reason mandatory for suspension and for rejection, and what maximum length? Recommendation: mandatory for both, 500 characters; none for activation or reinstatement.
+- **PO-3 (audit reading).** Who can read the trace, and from where? Recommendation: record now (T9f), read later through a platform-only route in a separate ticket; do you accept to ship without a way to read it?
+- **PO-4 (login by status).** Can the owner of a `PENDING_ACTIVATION` or `REJECTED` organization log in? Recommendation: yes for both, so the application can show the dedicated message.
+- **PO-5 (customer text).** Who writes and shows the customer-facing text? `endpoints-T5.md` says `message` is developer-facing English and clients branch on `code`. Recommendation: keep the convention, the front end shows the business text per code in the customer's language. A server-supplied customer text would need its own field, a language rule and a wording owner (a contract change). Please also validate the wording, for example: "Your organization is waiting for validation by the platform. You will be able to use the application as soon as it is validated."
+- **PO-6 (consistency).** Confirm that `SUSPENDED` and `REJECTED` also get dedicated codes and that `CLOSED` stays unchanged.
+- **PO-7 (rejection is final).** Can the platform undo a rejection? Recommendation: no; a refused customer registers again (which makes PO-8 important).
+- **PO-8 (re-registration).** Does a rejected organization keep its legal name and its owner's e-mail locked (as a `CLOSED` one does for the name)? Recommendation: release both so a customer can register again with corrections. Also confirm there is no external client for the changed codes (T7 decision 13).
+- **PO-9 (reads while suspended).** When tenant read endpoints exist, are they refused in `SUSPENDED` too? Recommendation: yes, decided when the first read is built.
+- **PO-10 (reason and e-mail visibility).** Does the tenant see the suspension or rejection reason? Recommendation: not in this ticket. And confirm that every platform administrator may see the owner's e-mail.
+
+**Architect**
+- **A-1 (owner e-mail).** Option A, B or C? Recommendation: C, with a fail-fast startup check if the adapter is missing and a null `ownerEmail` when the owner is not found. If A, decide before T7c merges.
+- **A-2 (audit storage).** Journal, actor on events, or both; schema and location of the journal; how the platform controller obtains the admin id without `CurrentTenantProvider` and without `organization` referencing `identity` (a plain UUID in the command plus a platform-admin provider port, probably in `shared`). Recommendation: journal as source of truth, events untouched in this ticket.
+- **A-3 (`REJECTED` model).** Event content (reason: no), final-state rule, unique legal-name index and `existsByLegalName` if PO-8 releases the name (partial unique index excluding `REJECTED`), and what happens to the owner `User` in `identity` if the e-mail is released. Decide together with PO-8.
+- **A-4 (dedicated codes).** A `switch` inside each of the three `MustBeActive...` rules and the closable rule, or one shared guard rule. Recommendation: one shared guard evaluated first, with the generic codes remaining for `CLOSED` only.
+- **A-5 (gate beyond organization).** How "a suspended tenant can do nothing" holds for future modules and reads (status via an event and a local table per module, a shared-kernel port implemented by `bootstrap`, or the security chain), and how the client learns the status without attempting an action. Recommendation: a small shared-kernel port plus a tenant "my organization" read in a later ticket; do not put the status in the token (stale).
+- **A-6 (sequencing).** Confirm the slicing, that T9g can ship first, and the placement of T9h relative to T7c.
