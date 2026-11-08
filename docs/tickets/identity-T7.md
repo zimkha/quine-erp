@@ -225,6 +225,11 @@ T7b-1 needs T7b-0 and T7c (merged). T7b-2 needs T7b-1. T9b needs T7b-2. T9g is i
 - **PO-2: token lifetime.** With no refresh, a tenant user must log in again every N minutes. What cadence is acceptable? *Recommendation: 30 minutes, configurable (T9 already sets 15 minutes for the platform). Revisit when refresh tokens are scheduled.*
 - **PO-3: tickets for the deployment prerequisites.** Login throttling or lockout, registration rate limiting, a separate database migration role. Do you want them scheduled as tickets that block the first real deployment? *Recommendation: yes, as one "pre-production hardening" group of tickets before the first outside-facing environment.*
 
+**Product-owner answers (2026-11-08, round 4): the PO accepted the three recommendations above.**
+- **PO-1 accepted.** The self-activation window between T7b-2 and T9c+T9d is accepted for local and team-only use. **No environment reachable by outsiders (demo, staging, production) will exist before T9c+T9d ship.** This is T7 rule 4, now confirmed. Whether a technical backstop (A16) is added on top stays with the Architect.
+- **PO-2 accepted.** Tenant access-token lifetime: **30 minutes, configurable, no refresh.** Revisit when refresh tokens are scheduled. (The platform token stays at 15 minutes, T9 A4.)
+- **PO-3 accepted.** Login throttling or lockout, registration rate limiting and a separate database migration role are scheduled as **one "pre-production hardening" group of tickets that blocks the first outside-facing environment.** They are not part of T7b.
+
 **Architect**
 - **A1 (T7b-0).** Module name and package. *`web-shared` and `com.zim.shared.web`, as T6 decided. The package prefix `com.zim.shared` is shared with the `shared` jar but the sub-packages differ, so there is no split package.*
 - **A2 (T7b-0).** Is `BusinessRuleViolationException` (409) and `DomainException` (422) generic? *Yes. They are shared-kernel types, and T6's list omitted them.*
