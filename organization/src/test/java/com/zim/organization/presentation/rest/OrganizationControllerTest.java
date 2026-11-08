@@ -85,6 +85,9 @@ class OrganizationControllerTest {
           "71e3b0c4-2a9d-4c5e-8f1b-3d6a9e2c4b57"
       );
 
+  // Fictitious test value of the required length.
+  private static final String VALID_PASSWORD = "not-a-real-password-1";
+
   private static final Instant CREATED_AT =
       Instant.parse("2026-08-25T10:00:00Z");
 
@@ -142,7 +145,8 @@ class OrganizationControllerTest {
         () -> new StoreId(HEADQUARTERS_ID),
         UUID::randomUUID,
         () -> CREATED_AT,
-        new InMemoryDomainEventPublisher()
+        new InMemoryDomainEventPublisher(),
+        (tenantId, email, password) -> { }
     );
     when(registerOrganizationHandler.handle(any())).thenAnswer(invocation ->
         realHandler.handle(invocation.getArgument(0))
@@ -155,7 +159,9 @@ class OrganizationControllerTest {
          "legalName": "Quincaillerie Thiès SARL",
          "currencyCode": "XOF",
          "headquartersCode": "THIES-01",
-         "headquartersName": "Magasin principal"
+         "headquartersName": "Magasin principal",
+         "ownerEmail": "owner@example.com",
+         "ownerPassword": "not-a-real-password-1"
         }
         """.formatted(OTHER_TENANT_ID);
 
@@ -198,7 +204,9 @@ class OrganizationControllerTest {
          "legalName": "Quincaillerie Thiès SARL",
          "currencyCode": "XOF",
          "headquartersCode": "THIES-01",
-         "headquartersName": "Magasin principal"
+         "headquartersName": "Magasin principal",
+         "ownerEmail": "owner@example.com",
+         "ownerPassword": "not-a-real-password-1"
         }
         """;
 
@@ -254,7 +262,9 @@ class OrganizationControllerTest {
        "legalName": "",
        "currencyCode": "XO",
        "headquartersCode": "",
-       "headquartersName": ""
+       "headquartersName": "",
+       "ownerEmail": "owner@example.com",
+       "ownerPassword": "not-a-real-password-1"
       }
       """;
 
@@ -297,7 +307,9 @@ class OrganizationControllerTest {
        "legalName": "Quincaillerie Thiès SARL",
        "currencyCode": "XOF",
        "headquartersCode": "THIES-01",
-       "headquartersName": "Magasin principal"
+       "headquartersName": "Magasin principal",
+       "ownerEmail": "owner@example.com",
+       "ownerPassword": "not-a-real-password-1"
       }
       """;
 
@@ -417,6 +429,181 @@ class OrganizationControllerTest {
             .value("The request conflicts with existing data"));
   }
 
+  /** The owner fields of T7c: pinned texts, never the submitted values. */
+  @ParameterizedTest
+  @MethodSource("invalidOwnerFields")
+  void shouldReturnBadRequestWhenOwnerFieldIsInvalid(
+      String field,
+      String value,
+      String expectedMessage
+  ) throws Exception {
+    register(validRequestWith(field, value))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$", aMapWithSize(3)))
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+        .andExpect(jsonPath("$.message").value(expectedMessage));
+
+    verifyNoInteractions(registerOrganizationHandler);
+  }
+
+  @Test
+  void shouldRejectMissingOwnerFields() throws Exception {
+    String body = """
+        {
+         "organizationName": "Quincaillerie Thiès",
+         "legalName": "Quincaillerie Thiès SARL",
+         "currencyCode": "XOF",
+         "headquartersCode": "THIES-01",
+         "headquartersName": "Magasin principal"
+        }
+        """;
+
+    register(body)
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.message").value(
+            "ownerEmail: must not be blank; "
+                + "ownerPassword: must not be blank"
+        ));
+  }
+
+  /** Whatever the failure, the typed password is never in the 400 body. */
+  @ParameterizedTest
+  @ValueSource(strings = {
+      "short-pw-1",
+      "this-password-is-far-too-long-and-secret-1234567890-abcdefghijklmnopqrstuvwxyz"
+  })
+  void shouldNeverEchoThePasswordInAnErrorMessage(String password)
+      throws Exception {
+    String response = register(
+        validRequestWith("ownerPassword", password)
+    )
+        .andExpect(status().isBadRequest())
+        .andReturn().getResponse().getContentAsString();
+
+    assertThat(response).doesNotContain(password);
+  }
+
+  @Test
+  void shouldNeverEchoTheInvalidEmailOrPasswordTogether() throws Exception {
+    String response = register(
+        "{\"organizationName\": \"Quincaillerie Thiès\", "
+            + "\"legalName\": \"Quincaillerie Thiès SARL\", "
+            + "\"currencyCode\": \"XOF\", \"headquartersCode\": \"THIES-01\", "
+            + "\"headquartersName\": \"Magasin principal\", "
+            + "\"ownerEmail\": \"not-an-email\", "
+            + "\"ownerPassword\": \"tiny-pw\"}"
+    )
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.message").value(
+            "ownerEmail: must be a valid e-mail address; "
+                + "ownerPassword: size must be between 12 and 72"
+        ))
+        .andReturn().getResponse().getContentAsString();
+
+    assertThat(response).doesNotContain("tiny-pw").doesNotContain("not-an-email");
+  }
+
+  @Test
+  void shouldReturnNeitherPasswordNorHashNorTokenOnRegistration()
+      throws Exception {
+    when(registerOrganizationHandler.handle(any())).thenReturn(
+        new RegisterOrganizationResult(
+            ORGANIZATION_ID, TENANT_ID, "Quincaillerie Thiès",
+            "PENDING_ACTIVATION", HEADQUARTERS_ID, CREATED_AT
+        )
+    );
+
+    String response = register(validRequestWith("legalName", "Quincaillerie Thiès SARL"))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$", aMapWithSize(6)))
+        .andReturn().getResponse().getContentAsString();
+
+    assertThat(response)
+        .doesNotContain(VALID_PASSWORD)
+        .doesNotContain("owner@example.com")
+        .doesNotContainIgnoringCase("password")
+        .doesNotContainIgnoringCase("hash")
+        .doesNotContainIgnoringCase("token");
+  }
+
+  @Test
+  void shouldPassOwnerFieldsToTheCommand() throws Exception {
+    when(registerOrganizationHandler.handle(any())).thenReturn(
+        new RegisterOrganizationResult(
+            ORGANIZATION_ID, TENANT_ID, "Quincaillerie Thiès",
+            "PENDING_ACTIVATION", HEADQUARTERS_ID, CREATED_AT
+        )
+    );
+
+    register(validRequestWith("legalName", "Quincaillerie Thiès SARL"))
+        .andExpect(status().isCreated());
+
+    org.mockito.ArgumentCaptor<RegisterOrganizationCommand> captor =
+        org.mockito.ArgumentCaptor.forClass(RegisterOrganizationCommand.class);
+    verify(registerOrganizationHandler).handle(captor.capture());
+    assertThat(captor.getValue().ownerEmail()).isEqualTo("owner@example.com");
+    assertThat(captor.getValue().ownerPassword()).isEqualTo(VALID_PASSWORD);
+  }
+
+  /**
+   * An exception coming from the owner port (EMAIL_ALREADY_EXISTS is a
+   * BusinessRuleViolationException of the shared kernel) uses the standard
+   * business-rule mapping: 409 with the rule's code.
+   */
+  @Test
+  void shouldMapOwnerRuleViolationToConflict() throws Exception {
+    when(registerOrganizationHandler.handle(any())).thenThrow(
+        new com.zim.shared.domain.BusinessRuleViolationException(
+            new com.zim.shared.domain.BusinessRule() {
+              @Override
+              public boolean isBroken() {
+                return true;
+              }
+
+              @Override
+              public String code() {
+                return "EMAIL_ALREADY_EXISTS";
+              }
+
+              @Override
+              public String message() {
+                return "A user with this e-mail address already exists";
+              }
+            }
+        )
+    );
+
+    register(validRequestWith("legalName", "Quincaillerie Thiès SARL"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("EMAIL_ALREADY_EXISTS"));
+  }
+
+  static Stream<Arguments> invalidOwnerFields() {
+    return Stream.of(
+        Arguments.of("ownerEmail", "not-an-email",
+            "ownerEmail: must be a valid e-mail address"),
+        Arguments.of("ownerEmail", "a@b@c.com",
+            "ownerEmail: must be a valid e-mail address"),
+        Arguments.of("ownerEmail", "",
+            "ownerEmail: must not be blank"),
+        Arguments.of("ownerEmail", "   ",
+            "ownerEmail: must be a valid e-mail address; "
+                + "ownerEmail: must not be blank"),
+        Arguments.of("ownerEmail", "a".repeat(250) + "@b.co",
+            "ownerEmail: must be a valid e-mail address; "
+                + "ownerEmail: size must be between 0 and 254"),
+        Arguments.of("ownerPassword", "short-pw-1",
+            "ownerPassword: size must be between 12 and 72"),
+        Arguments.of("ownerPassword", "x".repeat(73),
+            "ownerPassword: size must be between 12 and 72"),
+        Arguments.of("ownerPassword", "",
+            "ownerPassword: must not be blank; "
+                + "ownerPassword: size must be between 12 and 72"),
+        Arguments.of("ownerPassword", "            ",
+            "ownerPassword: must not be blank")
+    );
+  }
+
   private ResultActions register(String body) throws Exception {
     return mockMvc.perform(
         post("/api/organizations")
@@ -476,6 +663,8 @@ class OrganizationControllerTest {
     fields.put("currencyCode", "XOF");
     fields.put("headquartersCode", "THIES-01");
     fields.put("headquartersName", "Magasin principal");
+    fields.put("ownerEmail", "owner@example.com");
+    fields.put("ownerPassword", VALID_PASSWORD);
     fields.put(field, value);
 
     return fields.entrySet()

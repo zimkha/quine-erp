@@ -37,7 +37,7 @@ com.zim.organization
 | Module | Role |
 |---|---|
 | **shared** | Shared kernel. Base building blocks reused by every module: `AggregateRoot`, `DomainEvent`, `BusinessRule`, and common domain exceptions. |
-| **organization** | Organization & store lifecycle management: registering an organization, adding/deactivating stores, changing headquarters, activating/closing an organization. Multi-tenant (`TenantId`) aware. The most complete module — reference implementation for the others. |
+| **organization** | Organization & store lifecycle management: registering an organization (which also creates its owner user, T7c), adding/deactivating stores, changing headquarters, activating/closing an organization. Multi-tenant (`TenantId`) aware. The most complete module — reference implementation for the others. |
 | **identity** | Identity & access management: users, authentication/authorization, tenant onboarding. |
 | **customer** | Customer master data and relationship management. |
 | **supplier** | Supplier master data and vendor management. |

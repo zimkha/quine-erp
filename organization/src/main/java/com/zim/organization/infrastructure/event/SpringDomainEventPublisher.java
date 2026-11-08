@@ -19,6 +19,12 @@ import java.util.Objects;
  *   <li>A plain {@code @EventListener} runs inside the transaction, before
  *   commit. An exception it throws rolls the whole command back.</li>
  * </ul>
+ *
+ * <p>Events are notifications, not a mechanism for atomicity. Work that must
+ * succeed or fail together with a command (such as creating the owner of a
+ * newly registered organization) is a driven port called explicitly by the
+ * handler ({@code OwnerRegistrar}), never an {@code @EventListener} that would
+ * hide the requirement behind an implicit contract.
  */
 public final class SpringDomainEventPublisher
     implements DomainEventPublisher {

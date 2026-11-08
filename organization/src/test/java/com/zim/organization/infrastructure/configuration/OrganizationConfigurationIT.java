@@ -31,6 +31,7 @@ import com.zim.shared.domain.DomainEvent;
 import com.zim.shared.domain.TenantId;
 import com.zim.organization.infrastructure.persistence.mapper.OrganizationPersistenceMapper;
 import com.zim.organization.infrastructure.persistence.support.PostgresIntegrationTest;
+import com.zim.organization.testing.TestOwnerRegistrar;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.aop.support.AopUtils;
@@ -46,9 +47,11 @@ import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Import({
     OrganizationConfiguration.class,
+    TestOwnerRegistrar.Configuration.class,
     OrganizationConfigurationIT.CommittedEventCollector.class
 })
 class OrganizationConfigurationIT extends PostgresIntegrationTest {
@@ -97,6 +100,9 @@ class OrganizationConfigurationIT extends PostgresIntegrationTest {
 
   @Autowired
   private CommittedEventCollector committedEvents;
+
+  @Autowired
+  private TestOwnerRegistrar ownerRegistrar;
 
   @BeforeEach
   void clearCommittedEvents() {
@@ -198,7 +204,10 @@ class OrganizationConfigurationIT extends PostgresIntegrationTest {
                 "Quincaillerie Thiès " + UUID.randomUUID(),
                 "XOF",
                 "THIES-01",
-                "Magasin principal"
+                "Magasin principal",
+                "owner@example.com",
+                // Fictitious test value of the required length.
+                "not-a-real-password-1"
             )
         );
     TenantId tenantId = new TenantId(registered.tenantId());
@@ -244,6 +253,35 @@ class OrganizationConfigurationIT extends PostgresIntegrationTest {
             HeadquartersChanged.class,
             HeadquartersChanged.class
         );
+  }
+
+  /**
+   * T7c: the owner port runs inside the registration transaction, so when it
+   * fails the saved organization is rolled back and no event is committed.
+   */
+  @Test
+  @Transactional(propagation = Propagation.NOT_SUPPORTED)
+  void shouldRollBackRegistrationWhenOwnerCreationFails() {
+    String legalName = "Quincaillerie Thiès " + UUID.randomUUID();
+    ownerRegistrar.failNextCallWith(new IllegalStateException("owner refused"));
+
+    assertThatThrownBy(() -> registerOrganizationHandler.handle(
+        new RegisterOrganizationCommand(
+            "Quincaillerie Thiès",
+            legalName,
+            "XOF",
+            "THIES-01",
+            "Magasin principal",
+            "owner@example.com",
+            // Fictitious test value of the required length.
+            "not-a-real-password-1"
+        )
+    )).isInstanceOf(IllegalStateException.class);
+
+    assertThat(organizationRepository.existsByLegalName(
+        legalName.toUpperCase(java.util.Locale.ROOT)
+    )).isFalse();
+    assertThat(committedEvents.events).isEmpty();
   }
 
   static class CommittedEventCollector {

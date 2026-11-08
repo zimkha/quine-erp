@@ -1,6 +1,7 @@
 package com.zim.organization.presentation.rest.exception;
 
 import jakarta.validation.ConstraintViolation;
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -22,6 +23,7 @@ public final class FieldErrorMessages {
   private static final String NOT_BLANK = "must not be blank";
   private static final String NOT_NULL = "must not be null";
   private static final String PATTERN = "must match the required format";
+  private static final String EMAIL = "must be a valid e-mail address";
   private static final String FALLBACK = "is invalid";
 
   private FieldErrorMessages() {
@@ -51,6 +53,9 @@ public final class FieldErrorMessages {
     }
     if (type == Pattern.class) {
       return PATTERN;
+    }
+    if (type == Email.class) {
+      return EMAIL;
     }
     if (type == Size.class) {
       Map<String, Object> attributes = descriptor.getAttributes();

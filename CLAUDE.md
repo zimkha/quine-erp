@@ -64,7 +64,9 @@ bounded context: `shared`, `organization`, `identity`, `customer`, `supplier`, `
   same test layering).
 - **`identity`** is implemented as far as T7a: the `User` aggregate (e-mail, BCrypt password hash, one owner
   per tenant), `CreateOwnerHandler` and its own `identity` schema. Login, tokens and the security filter
-  are T7b (deferred); registration creating the owner is T7c. See `docs/tickets/identity-T7.md`.
+  are T7b (deferred). Registration creates the owner (T7c): `POST /api/organizations` takes `ownerEmail` and
+  `ownerPassword`, and `OwnerRegistrar` (an `organization` port) is implemented in `bootstrap` over `CreateOwnerHandler`,
+  in the registration transaction (all or nothing); the owner cannot log in until T7b. See `docs/tickets/identity-T7.md`.
 - The other business modules (`customer`, `supplier`, `catalog`, `inventory`,
   `purchasing`, `sales`, `cash`, `notification`, `reporting`) are scaffolded (POM only, single
   placeholder `Main.java`) and not yet implemented.

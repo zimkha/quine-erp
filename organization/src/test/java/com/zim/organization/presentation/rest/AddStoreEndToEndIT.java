@@ -8,6 +8,7 @@ import com.zim.organization.application.handler.ActivateOrganizationHandler;
 import com.zim.organization.application.handler.RegisterOrganizationHandler;
 import com.zim.organization.application.result.RegisterOrganizationResult;
 import com.zim.organization.infrastructure.configuration.OrganizationConfiguration;
+import com.zim.organization.testing.TestOwnerRegistrar;
 import com.zim.organization.infrastructure.persistence.support.PostgresIntegrationTest;
 import com.zim.organization.presentation.rest.exception.ApiExceptionHandler;
 import com.zim.shared.domain.TenantId;
@@ -51,7 +52,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     OrganizationConfiguration.class,
     TenantOrganizationController.class,
     ApiExceptionHandler.class,
-    SettableTenantProvider.ProviderConfiguration.class
+    SettableTenantProvider.ProviderConfiguration.class,
+    TestOwnerRegistrar.Configuration.class
 })
 class AddStoreEndToEndIT {
 
@@ -165,7 +167,10 @@ class AddStoreEndToEndIT {
             "Quincaillerie Thiès " + UUID.randomUUID(),
             "XOF",
             "THIES-01",
-            "Magasin principal"
+            "Magasin principal",
+            "owner@example.com",
+            // Fictitious test value of the required length.
+            "not-a-real-password-1"
         )
     );
   }
