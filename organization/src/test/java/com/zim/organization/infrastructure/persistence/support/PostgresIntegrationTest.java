@@ -36,7 +36,7 @@ public abstract class PostgresIntegrationTest {
       new PostgreSQLContainer("postgres:17-alpine")
           .withDatabaseName("quine")
           .withUsername("quine")
-          .withPassword("quine");
+          .withPassword(java.util.UUID.randomUUID().toString());
 
   static {
     POSTGRES.start();

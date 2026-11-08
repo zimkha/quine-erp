@@ -2,7 +2,8 @@ spring:
   datasource:
     url: ${QUINE_DB_URL:jdbc:postgresql://localhost:15432/quine}
     username: ${QUINE_DB_USER:quine}
-    password: ${QUINE_DB_PASSWORD:quine}
+    # No default: export QUINE_DB_PASSWORD (see CLAUDE.md).
+    password: ${QUINE_DB_PASSWORD}
   jpa:
     hibernate:
       ddl-auto: validate
