@@ -40,7 +40,7 @@ Each convention is one short rule plus a pointer to the ticket that explains why
 - The tenant is never read from the path, the query string, the body or a header. No request DTO declares a `tenantId`, and no tenant-scoped response echoes it. Registration is the one exception: it generates the tenant (`TenantIdGenerator`), takes no `tenantId` in its command, and returns it in `RegisterOrganizationResponse`.
 - An aggregate the caller's tenant doesn't own is indistinguishable from a missing one: the same 404, never a 409 or a 403.
 - Providers fail closed: if the tenant can't be established they throw `TenantNotResolvedException` (401, never `null`).
-- There is one default fail-closed provider, in `bootstrap` (`FailClosedTenantProvider`, `@Profile("!smoke")`), removed when `identity` (T7) supplies the real one. The `smoke` profile swaps in `SmokeTenantProvider` (tenant from `X-Smoke-Tenant`), for local runs only. Modules don't ship their own default (`@ConditionalOnMissingBean` defaults are rejected: registration order and duplicate beans).
+- *(Updated by T7b-2.)* There is exactly one `CurrentTenantProvider`, `JwtTenantProvider` in `identity` (the `tenantId` claim of the validated bearer token, fail closed). `FailClosedTenantProvider`, `SmokeTenantProvider` and the `smoke` profile were removed in T7b-2. Modules don't ship their own provider or default (`@ConditionalOnMissingBean` defaults are rejected: registration order and duplicate beans).
 - Tenant-scoped endpoints live in their own controller. The controller that serves public endpoints (register) never injects `CurrentTenantProvider`.
 
 ### 2. Order of steps and error contract

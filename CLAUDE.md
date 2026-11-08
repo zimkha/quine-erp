@@ -57,40 +57,54 @@ bounded context: `shared`, `web-shared`, `organization`, `identity`, `customer`,
   `AdviceAssertions`) is the shared test support. `maven-enforcer-plugin` `bannedDependencies` in each
   module pom forbids `organization` and `identity` from depending on each other.
 - **`bootstrap`** is the composition root: a Spring Boot app (`QuineApplication`) that wires the
-  business modules (today `organization` and `identity`). Until the filter chain (T7b-2) exists there is no real tenant
-  source (login and token issue exist since T7b-1, but tokens are not honoured): without a profile every tenant-scoped endpoint answers 401 (`FailClosedTenantProvider`).
-  The `smoke` profile reads the tenant from an `X-Smoke-Tenant` header and adds a
-  `/smoke/organizations/{id}/activate` shortcut, for local runs only (it refuses to start together with any
-  profile other than `smoke`, `local`, `dev`, `test` or `docker`):
+  business modules (today `organization` and `identity`) and holds **the security chain** (T7b-2, the only module with
+  a Spring Security starter: `spring-boot-starter-security-oauth2-resource-server`). The tenant is the `tenantId` claim
+  of a valid bearer token, read by `JwtTenantProvider` (`identity`), the only `CurrentTenantProvider` bean. There is
+  no `smoke` profile, no stand-in provider and no header-based tenant any more: the app starts with no profile.
+  `TenantSecurityConfiguration` declares one named catch-all chain (order constant `TENANT_CHAIN_ORDER`, no
+  `securityMatcher`): stateless, CSRF off, no form login, no HTTP Basic, no logout, the qualified `tenantJwtDecoder`
+  (HS256, audience `quine-tenant`, canonical-UUID `tenantId`, expiry required), one `ApiAuthenticationEntryPoint` and
+  `ApiAccessDeniedHandler` writing the standard `ApiErrorResponse` (header exactly `WWW-Authenticate: Bearer
+  realm="quine-erp"`, never any OAuth2 detail). **Every route is authenticated by default**, mapped or not (`/smoke/**`
+  answers 401); the only public routes are in `PublicRoutes` (`POST /api/organizations`, `POST /api/auth/login`). A
+  platform chain (T9b) will be a second chain at a higher precedence in another configuration.
 
   ```bash
   # No credential is committed. Export them first (random, local only; or put them in a git-ignored .env):
   export QUINE_DB_PASSWORD=$(openssl rand -hex 16)
   export QUINE_JWT_SECRET=$(openssl rand -base64 32)   # key of the TENANT token chain
 
-  docker compose up -d --build   # Postgres + app with the smoke profile on 127.0.0.1:18080
-  # or, with Postgres on localhost:15432 (same QUINE_DB_PASSWORD):
-  java -jar bootstrap/target/bootstrap-1.0-SNAPSHOT.jar --spring.profiles.active=smoke
+  docker compose up -d --build   # Postgres + app (no profile) on 127.0.0.1:18080
+  # or, with Postgres on localhost:15432 (same QUINE_DB_PASSWORD), no profile needed:
+  java -jar bootstrap/target/bootstrap-1.0-SNAPSHOT.jar
+  # add --quine.organization.tenant-activation.enabled=true for the activation route (see below)
   ```
 
-  `QUINE_JWT_SECRET` is required (standard Base64, at least 32 decoded bytes): the application refuses to start
-  without it, and the error never prints its value. `QUINE_DB_PASSWORD` has no default either. Compose publishes
-  Postgres and the app on `127.0.0.1` only and stops with the name of any missing variable.
+  `QUINE_JWT_SECRET` is the key of the **tenant** chain (standard Base64, at least 32 decoded bytes): the application
+  refuses to start without it, and the error never prints its value. `QUINE_DB_PASSWORD` has no default either.
+  Compose publishes Postgres and the app on `127.0.0.1` only and stops with the name of any missing variable.
 
-  The Postman collection in `docs/postman/` runs against it.
+  **Tenant self-activation flag (transitional).** `POST /api/organizations/{id}/activation` is served by
+  `TenantActivationController`, which exists only with `quine.organization.tenant-activation.enabled=true` (env
+  `QUINE_ORGANIZATION_TENANT_ACTIVATION_ENABLED`); the default is `false` and the route is absent. With it on, anyone who
+  registers can log in and activate their own organization, skipping the platform's validation (T7 PO-1). It is
+  `true` only in `docker-compose.yml` and in the tests that exercise the route. **Keep it `false` in any environment
+  reachable by anyone outside the team** (none may exist before T9c+T9d ship); T9d deletes the whole controller and the
+  flag. `spring.jpa.open-in-view` is `false` (no Hibernate session held while BCrypt runs).
+
+  The Postman collection in `docs/postman/` runs against it (register, log in, tokens in run-time variables).
 - **`organization`** is the only fully implemented business module and is the reference to
   follow when building out the others (same package layout, same CQRS-ish handler pattern,
   same test layering).
-- **`identity`** is implemented as far as T7b-1: the `User` aggregate (e-mail, BCrypt password hash, one owner
+- **`identity`** is implemented as far as T7b-2: the `User` aggregate (e-mail, BCrypt password hash, one owner
   per tenant), `CreateOwnerHandler`, its own `identity` schema, and **login and token issue**: `POST /api/auth/login`
   (`LoginHandler`, public) checks the credentials and returns `{accessToken, tokenType, expiresIn}`, an HS256 JWT
   (`sub` = user id, claim `tenantId`, `aud` = `quine-tenant`, no e-mail or password) signed by `NimbusJwtEncoder`.
   Failures are one `401 INVALID_CREDENTIALS` (unknown or malformed e-mail, wrong, short or over-72-byte password) with
   one BCrypt check on every path. Properties: `quine.security.tenant.jwt.secret` (from `QUINE_JWT_SECRET`) and
-  `quine.security.tenant.jwt.ttl-minutes` (default 30, allowed 1 to 120). **There is no Spring Security chain yet**
-  (only `spring-security-oauth2-jose`, never a `spring-boot-starter-security*`): tokens are issued but not honoured, and
-  the tenant provider is still the smoke or fail-closed stand-in until T7b-2 (filter chain, real `CurrentTenantProvider`,
-  end of the stand-ins). Registration creates the owner (T7c): `POST /api/organizations` takes `ownerEmail` and
+  `quine.security.tenant.jwt.ttl-minutes` (default 30, allowed 1 to 120). `identity` has only
+  `spring-security-oauth2-jose` (never a `spring-boot-starter-security*`); it provides the `tenantJwtDecoder` (from the
+  same key as the issuer) and `JwtTenantProvider`, and the chain in `bootstrap` honours the token (T7b-2). Registration creates the owner (T7c): `POST /api/organizations` takes `ownerEmail` and
   `ownerPassword`, and `OwnerRegistrar` (an `organization` port) is implemented in `bootstrap` over `CreateOwnerHandler`,
   in the registration transaction (all or nothing). See `docs/tickets/identity-T7.md`.
 - The other business modules (`customer`, `supplier`, `catalog`, `inventory`,
@@ -162,13 +176,16 @@ explains why. Full list and rationale: `docs/tickets/cross-module-conventions-T6
   command. The tenant never comes from the path, query, body or a header; no request DTO has a
   `tenantId`; tenant-scoped responses don't echo it (registration generates it and returns it).
 - Another tenant's aggregate looks exactly like a missing one: the same 404, never 409 or 403.
-- Providers fail closed (`TenantNotResolvedException`, 401). The only production default is
-  `FailClosedTenantProvider` in `bootstrap` (`!smoke` profile; `smoke` swaps in a local-only
-  `SmokeTenantProvider`), removed in T7b-2, when the identity filter chain lands. Modules ship no default of their own.
+- The one `CurrentTenantProvider` is `JwtTenantProvider` (`identity`): it reads only the `tenantId` claim of the
+  authenticated token and fails closed (`TenantNotResolvedException`, 401), never a default tenant. The default of the
+  application is deny: a request without a valid token never reaches a controller. Modules ship no provider of their own
+  (their tests use a stub). No stand-in provider exists.
+- **A new route is authenticated by default.** Only a route listed in `PublicRoutes` (`bootstrap`, method and path) is
+  public; classifying a route as public means editing that list and the route-walking test (`RouteWalkingIT`).
 - Tenant-scoped endpoints get their own controller; the public one (register) never injects the provider.
 
 **Errors** (`docs/tickets/endpoints-T5.md`, shared contract)
-- Step order: request validation (400), tenant (401), then in the handler: ownership (404), value
+- Step order: authentication (401, in the security chain, before the controller), request validation (400), then in the handler: ownership (404), value
   objects (422), business rules (409). Body: `ApiErrorResponse {code, message, timestamp}`.
 - `message` is developer-facing English. Clients branch on `code` only; `Accept-Language` is ignored.
 - A repeat of a state-changing action returns `<ENTITY>_ALREADY_<STATE>` (e.g.

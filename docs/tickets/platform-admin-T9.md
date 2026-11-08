@@ -28,7 +28,7 @@ As a platform administrator, I want to review newly registered organizations and
 - `Organization` already has `activate()` (from `PENDING_ACTIVATION` only), `suspend()` (from `ACTIVE` only) and `reinstate()` (from `SUSPENDED` only), with rules, codes and events (`OrganizationActivated`, `OrganizationSuspended`, `OrganizationReinstated`).
 - **Only activation has a handler and an endpoint**, and it is a tenant endpoint: `TenantOrganizationController` `POST /api/organizations/{id}/activation` → `ActivateOrganizationCommand(tenantId, organizationId)` → `ActivateOrganizationHandler`, which loads with `OrganizationRepository.findById(tenantId, id)`. There is no suspend or reinstate handler, command or endpoint.
 - `OrganizationRepository.findById` always filters by tenant, and another tenant's organization is a 404 (T1-T4). There is no read without a tenant and no listing.
-- `SmokeController` (`@Profile("smoke")`, `/smoke/organizations/{id}/activate`) calls the same handler with the tenant from `CurrentTenantProvider`. It is how Postman and five `*EndToEndIT` seeding paths get an `ACTIVE` organization today.
+- *(Updated by T7b-2.)* `SmokeController` (`/smoke/organizations/{id}/activate`), the `smoke` profile and both stand-in providers **no longer exist**. Tenant activation is the real route `POST /api/organizations/{id}/activation`, served by its own `TenantActivationController`, which exists only with `quine.organization.tenant-activation.enabled=true` (default `false`; `true` only in `docker-compose.yml` and in the tests that exercise it). Postman activates A through it with token A; four `*EndToEndIT` seed by calling the handler.
 - Domain code gap: `OrganizationMustBeActiveToBeSuspendedRule` answers `ORGANIZATION_CANNOT_BE_SUSPENDED` for every non-`ACTIVE` status, including an already-suspended one. There is no `ORGANIZATION_ALREADY_SUSPENDED`, which the repeat convention (`<ENTITY>_ALREADY_<STATE>`) would call for. See question A5.
 - Identity: T7a done (tenant users, owner). Login, JWT and the security chain are T7b (deferred). There is no identity that belongs to no tenant.
 - Tenant close (T5d) stays a tenant action and is **not** changed by this ticket.
@@ -93,9 +93,9 @@ Order: **T9a (decision) → T9b → T9a (implementation) → T9c → T9d.**
 ### T9d: Remove the tenant activation endpoint; clean-up
 
 - **Scope:**
-  - Remove `POST /api/organizations/{id}/activation`, the activation method of `TenantOrganizationController`, and the tenant-side `ActivateOrganizationCommand` / handler / response if no longer used (the platform version replaces them).
-  - Migrate everything that seeds an `ACTIVE` organization through the old handler: `SmokeController`, the five `*EndToEndIT` classes (`AddStore`, `ChangeHeadquarters`, `DeactivateStore`, `CloseOrganization`, `ActivateOrganization`), `OrganizationConfigurationIT`, `TenantScopedCommandTest`, `TenantOrganizationControllerTest`.
-  - Decide the fate of the `/smoke/organizations/{id}/activate` shortcut (remove it, or keep it as a local-only call to the platform handler). Proposal: remove it once Postman can activate through the platform route.
+  - Remove `POST /api/organizations/{id}/activation`, the whole `TenantActivationController` (extracted from `TenantOrganizationController` in T7b-2) and its flag, and the tenant-side `ActivateOrganizationCommand` / handler / response if no longer used (the platform version replaces them).
+  - **T9d deletes `TenantActivationController` entirely, and the flag `quine.organization.tenant-activation.enabled` with it** (and its `docker-compose.yml` variable, `TenantActivationFlagTest`, its imports in `QuineApplication`, `TenantOrganizationControllerTest` and `ActivateOrganizationEndToEndIT`). Migrate everything that seeds an `ACTIVE` organization through the old handler (`SmokeController` is already gone since T7b-2): the five `*EndToEndIT` classes (`AddStore`, `ChangeHeadquarters`, `DeactivateStore`, `CloseOrganization`, `ActivateOrganization`), `OrganizationConfigurationIT`, `TenantScopedCommandTest`, `TenantOrganizationControllerTest`.
+  - ~~Decide the fate of the `/smoke/organizations/{id}/activate` shortcut.~~ *Done in T7b-2: removed. Postman uses the real tenant route behind the default-off flag until this ticket replaces it with platform login and activation.*
   - Postman: replace the activation step by the platform flow (platform login, list, activate) in the setup folder, and drop the old request.
   - Documentation updates (below).
 - **Definition of done:** the old route no longer exists; the app starts; all tests pass; Postman collection runs end to end; no reference to the removed endpoint remains in `CLAUDE.md` or the tickets (T5e is marked superseded).
@@ -185,10 +185,10 @@ No request body (any body sent is ignored). A malformed `{id}` gives 400. 404 `O
 - `OrganizationRepository` and its adapter (cross-tenant read, listing); possibly a new read port.
 - `OrganizationMustBeActiveToBeSuspendedRule` (a repeat code, question A5) and its tests.
 - `ApiExceptionHandler` (parameter-type message beyond UUID for `status`, `page`, `size`).
-- `bootstrap`: `SmokeController`, `QuineApplication` wiring, the security chain, `docker-compose.yml` (new env var references, no values).
+- `bootstrap`: `QuineApplication` wiring (`SmokeController` is gone since T7b-2), the platform chain (a second chain beside `TenantSecurityConfiguration`, which it must not touch), `docker-compose.yml` (new env var references, no values; drop the tenant activation flag).
 - Tests: `ActivateOrganizationHandlerTest`, `TenantOrganizationControllerTest`, `TenantScopedCommandTest`, `OrganizationConfigurationIT`, and the five `*EndToEndIT` classes that seed through the old activation.
 - `docs/postman/quine-erp-organization.postman_collection.json` (9 references to activation/smoke) and `quine-erp-local.postman_environment.json` (platform login variables, no values committed).
-- `CLAUDE.md`: the `bootstrap` description (smoke shortcut), the Conventions section (second identity kind, platform zone, the tenant exception).
+- `CLAUDE.md`: the `bootstrap` description (the tenant activation flag paragraph goes with T9d), the Conventions section (second identity kind, platform zone, the tenant exception).
 - `docs/tickets/endpoints-T5.md` (T5e marked superseded by T9 / PO 2026-11-08, readiness table), `identity-T7.md` (T9 pointer), `tenant-scoping-T1-T4.md` and `domain-activate-reinstate-split.md` (activation references), `validation-message-locale.md` if new constraints get pinned texts.
 
 ## Risks
@@ -199,7 +199,7 @@ No request body (any body sent is ignored). A malformed `{id}` gives 400. 404 `O
 - **No audit trail.** Events carry the organization and tenant but not who acted; suspension is a high-impact action (question P3).
 - **Window between T9c and T9d** where tenants can still self-activate. Mitigated by shipping them together and before any real deployment.
 - **Blocking point not fully removed.** Until the platform validates, a customer can register but do nothing. Decision 3c accepts this; the customer experience (how they learn they are waiting) is outside this ticket.
-- **Seeding migration.** Many tests and Postman rely on tenant/smoke activation; migrating them in T9d is a sizeable but mechanical change.
+- **Seeding migration.** Many tests and Postman rely on the tenant activation route (since T7b-2, behind the default-off flag); migrating them in T9d is a sizeable but mechanical change.
 
 ## Dependencies
 
@@ -233,7 +233,7 @@ No request body (any body sent is ignored). A malformed `{id}` gives 400. 404 `O
 5. The T9a gate was inconsistent. The correct reading: **the T9a decision does not block T9b**, because how the first row is created affects neither login nor the routes.
 6. The acceptance criteria "tenant token on a platform route → 403 `PLATFORM_ACCESS_DENIED`" and "authenticated tenant user with a bad body → 403, not 400" are void (A4): both are 401 `AUTHENTICATION_REQUIRED`.
 7. `tenantId` is **removed from the listing items** (T6: tenant-scoped responses do not echo the tenant, and no T9 action takes a tenant). Revisit if the reviewer really needs it (question P4).
-8. The shortcut `/smoke/.../activate` cannot survive T7b (A7).
+8. The shortcut `/smoke/.../activate` cannot survive T7b (A7). *Done in T7b-2.*
 
 ### Revised slicing and order
 
@@ -246,14 +246,14 @@ No request body (any body sent is ignored). A malformed `{id}` gives 400. 404 `O
 
 ### Risks added
 
-1. **`bootstrap` has no Spring Security today.** A platform route imported before T7b/T9b would be open to everyone: `FailClosedTenantProvider` does not protect it (a platform controller must not call the provider). Rule: do not import the controller until the chain exists; add an integration test "no token → 401" on every `/api/platform/**` route and a default `authenticated()`/`denyAll()` for any other request.
+1. **`bootstrap` had no Spring Security when this was written; since T7b-2 it has the tenant chain, a catch-all that answers 401 to anything unmapped.** The platform chain (T9b) is added in front of it by its own configuration. A platform route imported before T7b/T9b would be open to everyone: a platform controller must not call the tenant provider. Rule: do not import the controller until the chain exists; add an integration test "no token → 401" on every `/api/platform/**` route and a default `authenticated()`/`denyAll()` for any other request.
 2. **RLS (T10) must cover platform writes**, not only reads (A3).
 3. **Compromised platform admin:** no token revocation; mitigated by the 15-minute TTL and the `active` flag checked at login.
 4. **Brute force on platform login:** no rate limiting or lockout is **a prerequisite for any real deployment** (stronger than the "accepted limit" of T7, because this is the most powerful account).
 5. **Audit (P3):** events carry no actor. At minimum log the admin id next to the handler call. An actor field on events is an event-schema change, to decide before any consumer exists.
 6. **Offset pagination** can skip or duplicate rows when an organization changes status between two pages. Acceptable for a review queue.
 7. **Secrets (T9a):** environment variables only, including compose and the Postman environment file (no values committed).
-8. **Documentation:** `CLAUDE.md` (smoke description; Conventions: second identity kind, platform zone, the cross-tenant read exception), `endpoints-T5.md` (T5e superseded, readiness table).
+8. **Documentation:** `CLAUDE.md` (the smoke description is already gone since T7b-2; Conventions: second identity kind, platform zone, the cross-tenant read exception), `endpoints-T5.md` (T5e superseded, readiness table).
 
 ## Product-owner decisions, round 2 (2026-11-08)
 

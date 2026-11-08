@@ -38,7 +38,7 @@ com.zim.organization
 |---|---|
 | **shared** | Shared kernel. Base building blocks reused by every module: `AggregateRoot`, `DomainEvent`, `BusinessRule`, and common domain exceptions. |
 | **organization** | Organization & store lifecycle management: registering an organization (which also creates its owner user, T7c), adding/deactivating stores, changing headquarters, activating/closing an organization. Multi-tenant (`TenantId`) aware. The most complete module — reference implementation for the others. |
-| **identity** | Identity & access management: users (owner created at registration), login and access-token issue (T7b-1; the filter chain and roles come later). |
+| **identity** | Identity & access management: users (owner created at registration), login, access-token issue and the security chain that authenticates every tenant route (T7b-2; roles come later). |
 | **customer** | Customer master data and relationship management. |
 | **supplier** | Supplier master data and vendor management. |
 | **catalog** | Product/item catalog: SKUs, pricing, categories. |
@@ -73,4 +73,11 @@ export QUINE_JWT_SECRET=$(openssl rand -base64 32)   # standard Base64, at least
 docker compose up -d --build                           # Postgres + app on 127.0.0.1:18080
 ```
 
-The application refuses to start without `QUINE_JWT_SECRET`. See `CLAUDE.md` for details.
+The application starts with no profile and refuses to start without `QUINE_JWT_SECRET` (the key of the tenant
+token chain). Every route needs a bearer token (register, then log in) except `POST /api/organizations` and
+`POST /api/auth/login`; there is no `smoke` profile or header-based tenant any more.
+
+Compose turns on the tenant self-activation route `POST /api/organizations/{id}/activation`
+(`quine.organization.tenant-activation.enabled`, **`false` by default**): anyone who registers can activate their own
+organization with it, skipping the platform's validation. Use it for local and team work only, and keep it `false` in
+any environment reachable by anyone outside the team (T9d removes the route). See `CLAUDE.md` for details.
