@@ -38,7 +38,7 @@ com.zim.organization
 |---|---|
 | **shared** | Shared kernel. Base building blocks reused by every module: `AggregateRoot`, `DomainEvent`, `BusinessRule`, and common domain exceptions. |
 | **organization** | Organization & store lifecycle management: registering an organization (which also creates its owner user, T7c), adding/deactivating stores, changing headquarters, activating/closing an organization. Multi-tenant (`TenantId`) aware. The most complete module — reference implementation for the others. |
-| **identity** | Identity & access management: users, authentication/authorization, tenant onboarding. |
+| **identity** | Identity & access management: users (owner created at registration), login and access-token issue (T7b-1; the filter chain and roles come later). |
 | **customer** | Customer master data and relationship management. |
 | **supplier** | Supplier master data and vendor management. |
 | **catalog** | Product/item catalog: SKUs, pricing, categories. |
@@ -62,3 +62,15 @@ mvn clean install
 
 Modules requiring a database (e.g. `organization`) use Testcontainers for integration
 tests, so Docker must be running to execute the full test suite.
+
+## Run locally
+
+No credential is committed: export them first (random, local only) or put them in a git-ignored `.env`.
+
+```bash
+export QUINE_DB_PASSWORD=$(openssl rand -hex 16)
+export QUINE_JWT_SECRET=$(openssl rand -base64 32)   # standard Base64, at least 32 bytes
+docker compose up -d --build                           # Postgres + app on 127.0.0.1:18080
+```
+
+The application refuses to start without `QUINE_JWT_SECRET`. See `CLAUDE.md` for details.

@@ -1,6 +1,6 @@
 # T7: Identity: authenticated users and the real current tenant
 
-- **Status:** drafted by the BA against `main` at `a708069` (2026-10-02). Product owner answered questions 1–5 on 2026-10-02. **Architect: validated with changes (2026-10-02, checked against `a708069`).** The changes are applied below. **Sequencing: hybrid (decided 2026-10-02 on the BA's recommendation): T7a and T7c now; T7b and T8 later, but before any real (non-local) deployment.** Small product-owner confirmations remain, listed at the end. **Implementation status: T7a implemented; T7c implemented (registration creates the owner in the same transaction; the Postman collection is updated; the owner cannot log in until T7b); T7b not started.**
+- **Status:** drafted by the BA against `main` at `a708069` (2026-10-02). Product owner answered questions 1–5 on 2026-10-02. **Architect: validated with changes (2026-10-02, checked against `a708069`).** The changes are applied below. **Sequencing: hybrid (decided 2026-10-02 on the BA's recommendation): T7a and T7c now; T7b and T8 later, but before any real (non-local) deployment.** Small product-owner confirmations remain, listed at the end. **Implementation status: T7a implemented; T7c implemented (registration creates the owner in the same transaction; the Postman collection is updated; the owner can log in since T7b-1, and the token is not honoured by any route until T7b-2); T7b-1 implemented (login and token issue, A17 credentials; no Spring Security chain yet); T7b-2 not started.**
 - **Workflow:** BA → Architect → Developer → Lead Developer (see `CLAUDE.md`).
 - **Sources:** the "T7" follow-ups in `tenant-scoping-T1-T4.md`, `endpoints-T5.md` and `cross-module-conventions-T6.md`.
 
@@ -328,6 +328,15 @@ Risks added by T7b:
 **Facts to correct in the text above:** the Postman counts (37 real headers); the bootstrap test inventory; T7b-1 is not behaviour-identical; AC2 and AC7 must account for the 72-byte truncation; the starter names; "ObjectMapper" is Jackson 3; A16 cannot reuse the T7a allow-list; `findByEmail` and `existsByEmail` do not use the `lower(email)` index.
 
 **New risks:** CSRF on the public registration; a generated credential logged by the `UserDetailsService` auto-configuration; `setJwtValidator` replacing the defaults; the HS256 header requirement; secret leakage through configuration-binding errors and the Base64 exception; `/error` and `sendError` turning errors into 401; BCrypt truncation at 72 bytes; a sequential scan of `identity.users` at login; rejected values in DEBUG logs; clock skew of 60 s on expiry; no brake on brute force or on the CPU cost of BCrypt for a public endpoint (PO-3).
+
+#### 10. T7b-1 implementation notes (Developer)
+
+- Properties: `quine.security.tenant.jwt.secret` (placeholder `${QUINE_JWT_SECRET}`, no default) and `quine.security.tenant.jwt.ttl-minutes` (default 30, allowed 1 to 120, whole minutes; out of bounds or not a number refuses to start). Bounds are the Developer's proposal, to confirm.
+- The secret is read as a raw string in `TenantJwtSettings` (not `@ConfigurationProperties`); every failure is a fixed message naming `QUINE_JWT_SECRET`, with no value and no chained Base64 exception. The value is stripped of surrounding whitespace before decoding.
+- `LoginHandler` is not transactional (one read; BCrypt must not hold a connection). The dummy hash is `PasswordHasher.hash` of a random UUID string. A stored row whose e-mail fails `Email` (`InvalidValueException` from the mapper) is a 401 like any other failure.
+- `findByEmail` and `existsByEmail` use `lower(e.email) = :email` (the parameter is already normalised), served by `uk_users_email`; no migration.
+- The login response carries `Cache-Control: no-store`.
+- A17 done: compose uses `${VAR:?...}` for the database and JWT variables and publishes ports on `127.0.0.1`; `.env` is git-ignored; `application.yaml` has no database password default.
 
 ## Out of scope
 
